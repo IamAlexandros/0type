@@ -55,11 +55,13 @@ pkgcheck:
 dist: build
 	@test -n "$(ORTLIB)" || (echo "error: libonnxruntime.so not found; install onnxruntime-devel" >&2; exit 1)
 	rm -rf $(DISTDIR)
-	mkdir -p $(DISTDIR)/bin $(DISTDIR)/lib $(DISTDIR)/themes
+	mkdir -p $(DISTDIR)/bin $(DISTDIR)/lib $(DISTDIR)/themes $(DISTDIR)/licenses
 	cp bin/0type $(DISTDIR)/bin/
 	cp $(ORTLIB) $(DISTDIR)/lib/
 	ln -sf $(notdir $(ORTLIB)) $(DISTDIR)/lib/libonnxruntime.so
 	cp internal/theme/themes/*.css $(DISTDIR)/themes/
+	# The binary embeds several fonts; their OFL licenses travel with it.
+	cp internal/ui/fonts/*-OFL.txt $(DISTDIR)/licenses/
 	cp packaging/install.sh $(DISTDIR)/
 	chmod +x $(DISTDIR)/install.sh
 	cp README.md $(DISTDIR)/

@@ -1,0 +1,48 @@
+/* 0type "win98" -- Windows 98 / classic Win32.
+ *
+ * 0type-mark: pixel
+ * 0type-idle: Listening...
+ * 0type-copied: Copied to Clipboard
+ *
+ * The whole look is four hairlines: white and light-gray on the top and
+ * left, dark-gray and black on the bottom and right. That's a Win32
+ * BS_GROUPBOX bevel, and it's the only thing that makes 3D-era chrome
+ * read as 3D. GTK has no `border-style: outset` worth using here, so the
+ * bevel is built from stacked inset box-shadows, outermost first.
+ *
+ * Nothing is rounded, nothing is translucent, and there is no shadow --
+ * a 1998 window had none of the three. The drop shadow is a single hard
+ * black offset rectangle, which is what Win98 actually did for menus.
+ *
+ * Ellipsis is "..." rather than "…": the real thing predates anyone
+ * caring, and the three dots are wider, which suits the face. */
+
+window { background-color: transparent; }
+
+#zt-panel {
+  margin: 40px;
+  background-color: #c0c0c0;
+  border-radius: 0;
+  border: none;
+  box-shadow:
+    inset  1px  1px 0 #ffffff,
+    inset -1px -1px 0 #000000,
+    inset  2px  2px 0 #dfdfdf,
+    inset -2px -2px 0 #808080,
+    4px 4px 0 rgba(0, 0, 0, 0.45);
+  padding: 10px 18px;
+  min-width: 240px;
+}
+
+#zt-label {
+  color: #000000;
+  font-family: "Selawik", "Tahoma", "Liberation Sans", sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+#zt-accent  { color: #000080; }              /* the one blue Win98 had */
+#zt-muted   { color: #6a6a6a; }
+#zt-success { color: #008080; }               /* teal, the other one */
+#zt-meter   { color: #000080; }
+#zt-tile    { color: rgba(0, 0, 0, 0.16); }

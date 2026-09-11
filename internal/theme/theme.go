@@ -42,9 +42,10 @@ type Theme struct {
 	Name string
 	// CSS is the stylesheet itself.
 	CSS []byte
-	// Mark names the brand mark the overlay should draw (see
-	// parseDirectives). Always set; DefaultMark if the theme declares none.
-	Mark string
+	// Directives are 0type's own settings for this theme -- the brand mark
+	// and the overlay's wording. Always fully populated with defaults for
+	// anything the theme doesn't declare.
+	Directives
 	// Origin describes where it came from, for `0type themes` output and
 	// for error messages that would otherwise leave the user guessing
 	// which of several same-named files actually took effect.
@@ -96,11 +97,11 @@ func Load(name string) (*Theme, error) {
 // newTheme assembles a Theme from stylesheet bytes, reading 0type's own
 // directives out of it.
 func newTheme(name string, css []byte, origin string) (*Theme, error) {
-	mark, err := parseDirectives(css)
+	directives, err := parseDirectives(css)
 	if err != nil {
 		return nil, fmt.Errorf("theme %s (%s): %w", name, origin, err)
 	}
-	return &Theme{Name: name, CSS: css, Mark: mark, Origin: origin}, nil
+	return &Theme{Name: name, CSS: css, Directives: directives, Origin: origin}, nil
 }
 
 // Entry is one theme available to load, as reported by List.

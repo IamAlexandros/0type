@@ -1,0 +1,73 @@
+/* 0type "winxp" -- Windows XP, Luna blue.
+ *
+ * 0type-idle: Listening...
+ * 0type-copied: Copied to clipboard
+ *
+ * A *window*, not a blue bar: XP's client area was a warm off-white
+ * (#ece9d8, the color everyone remembers as "that beige"), and the blue
+ * belonged to the title bar above it. Painting the whole panel blue gets
+ * the palette right and the object wrong.
+ *
+ * The title bar is built from hard color stops in a single gradient: blue
+ * from the top down to 30px, then #ece9d8 from 30px on. Two layers sit on
+ * top of that -- a red circle for the close button and a paler strip for
+ * the minimise/maximise pair -- because a title bar with no buttons reads
+ * as a colored stripe rather than as chrome. The content is pushed below
+ * the bar with an asymmetric padding-top rather than being centered in
+ * the panel.
+ *
+ * Luna's blue is a gradient in its own right, not a flat fill: bright at
+ * the very top, deeper in the middle, with a light line just above the
+ * client area. Those intermediate stops are most of the resemblance.
+ *
+ * Rounded at the top corners only, square at the bottom -- exactly how XP
+ * drew a window frame. */
+
+window { background-color: transparent; }
+
+#zt-panel {
+  margin: 40px;
+  background-image:
+    /* close button */
+    radial-gradient(circle closest-side at center, #f0a08c 0%, #d9513a 65%, #a8341f 100%),
+    /* the two buttons left of it, suggested rather than drawn */
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.30), rgba(255, 255, 255, 0.16)),
+    /* title bar over client area */
+    linear-gradient(to bottom,
+      #0f6cdb 0px,
+      #3f90f0 6px,
+      #1c62d4 20px,
+      #0a4bb5 28px,
+      #d8d2bc 28px,
+      #d8d2bc 30px,
+      #ece9d8 30px,
+      #ece9d8 100%);
+  /* Percentages, not `right 9px top 7px`: GTK only accepts two values
+   * here and silently drops the rest of the declaration, which parks both
+   * buttons in the top-left corner. */
+  background-position: 98% 8px, 92% 9px, 0 0;
+  background-size: 15px 15px, 34px 13px, auto;
+  background-repeat: no-repeat, no-repeat, no-repeat;
+  background-color: #ece9d8;
+  border-radius: 8px 8px 2px 2px;
+  border: 3px solid #0a4bb5;
+  box-shadow:
+    0 3px 8px rgba(0, 0, 0, 0.40),
+    0 12px 30px rgba(0, 0, 0, 0.35);
+  /* Top padding clears the 30px title bar; the rest is the client area. */
+  padding: 40px 16px 12px 16px;
+  min-width: 240px;
+}
+
+#zt-label {
+  color: #000000;
+  font-family: "Selawik", "Tahoma", "Liberation Sans", sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+#zt-accent  { color: #0a3f9e; }                /* the frame blue, in the client area */
+#zt-muted   { color: #5c5c52; }
+#zt-success { color: #1c7a1c; }                /* the green from the start button */
+#zt-meter   { color: #0a3f9e; }
+#zt-tile    { color: rgba(10, 40, 106, 0.14); }

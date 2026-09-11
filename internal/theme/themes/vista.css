@@ -1,0 +1,52 @@
+/* 0type "vista" -- Aero glass.
+ *
+ * 0type-idle: Listening…
+ * 0type-copied: Copied to clipboard
+ *
+ * Aero was three effects stacked: a translucent tinted pane, a bright
+ * white rim around the whole edge, and a soft colored glow bleeding
+ * outward from it. GTK can't blur what's behind a window, so the
+ * translucency here is a blue-black wash with a strong top-to-bottom
+ * highlight -- the gradient does the work the blur would have.
+ *
+ * The rim is what actually says "Vista": a 1px near-white border plus an
+ * inner white line, so the edge reads as polished glass rather than as a
+ * drawn outline.
+ *
+ * Selawik is Microsoft's own metric-compatible stand-in for Segoe UI,
+ * which is the typeface Vista introduced. */
+
+window { background-color: transparent; }
+
+#zt-panel {
+  margin: 46px;
+  background-image: linear-gradient(to bottom,
+    rgba(190, 225, 255, 0.34) 0%,
+    rgba(120, 175, 225, 0.20) 48%,
+    rgba(20, 45, 80, 0.26) 52%,
+    rgba(15, 35, 65, 0.34) 100%);
+  background-color: rgba(18, 38, 66, 0.72);
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.75),
+    inset 0 0 14px rgba(160, 210, 255, 0.30),
+    0 2px 6px rgba(0, 0, 0, 0.40),
+    0 14px 34px rgba(0, 0, 0, 0.45),
+    0 0 34px rgba(120, 190, 255, 0.30);
+  padding: 11px 22px;
+  min-width: 240px;
+}
+
+#zt-label {
+  color: #ffffff;
+  font-family: "Selawik", "Segoe UI", Cantarell, sans-serif;
+  font-size: 15px;
+  font-weight: 400;
+}
+
+#zt-accent  { color: #7fd0ff; }
+#zt-muted   { color: rgba(206, 228, 250, 0.78); }
+#zt-success { color: #a6f07a; }
+#zt-meter   { color: #ffffff; }
+#zt-tile    { color: rgba(255, 255, 255, 0.16); }

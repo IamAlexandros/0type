@@ -25,7 +25,13 @@ func userThemeDir(t *testing.T) string {
 func TestLoadBuiltin(t *testing.T) {
 	userThemeDir(t) // empty: nothing to shadow the built-ins
 
-	for _, name := range []string{"default", "light", "mono", "term"} {
+	// Every built-in, not a hardcoded list: a theme added later must be
+	// held to the same bar without anyone remembering to add it here.
+	names := builtinNames()
+	if len(names) < 4 {
+		t.Fatalf("builtinNames() = %v, suspiciously few", names)
+	}
+	for _, name := range names {
 		th, err := Load(name)
 		if err != nil {
 			t.Fatalf("Load(%q): %v", name, err)
@@ -43,6 +49,11 @@ func TestLoadBuiltin(t *testing.T) {
 			if !bytes.Contains(th.CSS, []byte(sel)) {
 				t.Errorf("built-in theme %q does not style %s", name, sel)
 			}
+		}
+		// Wording is never empty: a theme that sets an idle directive to
+		// nothing would render a blank bar rather than fall back.
+		if th.Idle == "" || th.Copied == "" {
+			t.Errorf("built-in theme %q has empty wording: %+v", name, th.Directives)
 		}
 	}
 }
@@ -162,7 +173,7 @@ func TestList(t *testing.T) {
 		names = append(names, e.Name)
 	}
 
-	for _, want := range []string{"custom", "default", "light", "mono", "term"} {
+	for _, want := range append(builtinNames(), "custom") {
 		if _, ok := byName[want]; !ok {
 			t.Errorf("List() missing %q (got %v)", want, names)
 		}
@@ -189,22 +200,49 @@ func TestList(t *testing.T) {
 }
 
 func TestParseDirectivesDefault(t *testing.T) {
-	mark, err := parseDirectives([]byte("#zt-panel { color: red; }"))
+	d, err := parseDirectives([]byte("#zt-panel { color: red; }"))
 	if err != nil {
 		t.Fatalf("parseDirectives: %v", err)
 	}
-	if mark != DefaultMark {
-		t.Errorf("mark = %q, want %q", mark, DefaultMark)
+	if d.Mark != DefaultMark || d.Idle != DefaultIdle || d.Copied != DefaultCopied {
+		t.Errorf("directives = %+v, want the defaults", d)
 	}
 }
 
 func TestParseDirectivesMark(t *testing.T) {
-	mark, err := parseDirectives([]byte("/* nice theme\n * 0type-mark: pixel\n */\n#zt-panel {}"))
+	d, err := parseDirectives([]byte("/* nice theme\n * 0type-mark: pixel\n */\n#zt-panel {}"))
 	if err != nil {
 		t.Fatalf("parseDirectives: %v", err)
 	}
-	if mark != "pixel" {
-		t.Errorf("mark = %q, want pixel", mark)
+	if d.Mark != "pixel" {
+		t.Errorf("mark = %q, want pixel", d.Mark)
+	}
+}
+
+// Wording is part of a pastiche: a Game Boy theme says READY, not
+// "Listening…". The text must survive the surrounding comment syntax.
+func TestParseDirectivesText(t *testing.T) {
+	d, err := parseDirectives([]byte("/* 0type-idle: READY\n * 0type-copied: SAVED!\n */"))
+	if err != nil {
+		t.Fatalf("parseDirectives: %v", err)
+	}
+	if d.Idle != "READY" {
+		t.Errorf("Idle = %q, want READY", d.Idle)
+	}
+	if d.Copied != "SAVED!" {
+		t.Errorf("Copied = %q, want SAVED!", d.Copied)
+	}
+}
+
+// A directive on one line with the comment closing right after it must
+// not swallow the `*/`.
+func TestParseDirectivesTextStopsAtCommentEnd(t *testing.T) {
+	d, err := parseDirectives([]byte("/* 0type-idle: Ready to type */\n#zt-panel {}"))
+	if err != nil {
+		t.Fatalf("parseDirectives: %v", err)
+	}
+	if d.Idle != "Ready to type" {
+		t.Errorf("Idle = %q, want %q", d.Idle, "Ready to type")
 	}
 }
 

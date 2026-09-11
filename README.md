@@ -81,8 +81,21 @@ that fails or hangs is logged and killed. The hooks are `on_start`,
 
 ## Themes
 
-Four are built in: `default` (dark, glassy), `light`, `mono` (grayscale),
-and `term` (a terminal, with an 8-bit mic).
+Eighteen are built in.
+
+*Plain:* `default` (dark, glassy), `light`, `mono` (grayscale).
+
+*Terminals:* `term` (green phosphor), `amber` (amber CRT), `dos` (CGA text
+mode), `c64` (the Commodore boot screen).
+
+*Desktops:* `win98`, `winxp` (an actual window, title bar and all),
+`vista` (Aero glass), `macclassic` (System 6, black on white), `aqua`
+(Mac OS X lozenge), `discord`.
+
+*Devices:* `gameboy`, `nokia3310`, `tamagotchi`, `winamp`, `xbox`.
+
+They set their own wording too, so the Game Boy says READY and SAVED!
+where DOS says `C:\>` and `1 file(s) copied.`
 
 The quickest way to switch is the menu: run `0type`, pick **Theme**, and
 arrow through the list — each one applies live as you move, Enter keeps it
@@ -95,7 +108,14 @@ the tarball (or `internal/theme/themes/` in the source) to
 
 Besides the panel itself, a theme sets the colors the overlay draws with —
 `#zt-accent`, `#zt-muted`, `#zt-success`, `#zt-meter`, `#zt-tile` — and
-may pick a brand mark with a `0type-mark: mic|pixel|zero` comment.
+may set three things CSS can't express, via comment directives:
+`0type-mark: mic|pixel|zero`, `0type-idle: READY`, and
+`0type-copied: SAVED!`.
+
+Five fonts are embedded in the binary and registered for 0type alone
+(nothing is installed into your system): Press Start 2P, Silkscreen,
+VT323, and Selawik regular/bold — all SIL Open Font License, with the
+license texts in `licenses/` in the tarball.
 Preview as you go with `0type ui --theme ./mine.css --text "hello"`.
 
 ## How it works

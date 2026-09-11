@@ -1,0 +1,42 @@
+/* 0type "c64" -- Commodore 64 boot screen.
+ *
+ * 0type-mark: pixel
+ * 0type-idle: READY.
+ * 0type-copied: SAVED.
+ *
+ * Two blues and nothing else: the screen (#4035b0) sitting inside a
+ * lighter border (#7b71d6), which is exactly how a C64 filled a TV --
+ * the border was a real, unusable margin around the text area, not a
+ * decoration, so here it's a thick flat frame with no bevel, no shadow
+ * on the inside, and no rounding.
+ *
+ * The text is the same light blue as the border, because the C64's
+ * default palette gave you one foreground color and you lived with it.
+ *
+ * "READY." with the full stop is the boot prompt verbatim. */
+
+window { background-color: transparent; }
+
+#zt-panel {
+  margin: 40px;
+  background-color: #4035b0;
+  border-radius: 0;
+  border: 10px solid #7b71d6;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55);
+  padding: 9px 14px;
+  min-width: 240px;
+}
+
+#zt-label {
+  color: #a79dff;
+  font-family: "Press Start 2P", "Silkscreen", monospace;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.5px;
+}
+
+#zt-accent  { color: #a79dff; }
+#zt-muted   { color: #6f66c8; }
+#zt-success { color: #cfc8ff; }
+#zt-meter   { color: #a79dff; }
+#zt-tile    { color: rgba(167, 157, 255, 0.18); }

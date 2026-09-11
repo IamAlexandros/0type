@@ -1,0 +1,49 @@
+/* 0type "gameboy" -- the 1989 DMG screen.
+ *
+ * 0type-mark: pixel
+ * 0type-idle: READY
+ * 0type-copied: SAVED!
+ *
+ * The DMG's LCD had exactly four shades of yellow-green, and this uses
+ * all four and nothing else: #9bbc0f lightest (the background),
+ * #8bac0f, #306230, #0f380f darkest (the "ink"). Any fifth color --
+ * including a gray shadow or a white highlight -- breaks it instantly,
+ * which is why the bezel below is drawn in the darkest shade rather than
+ * in black.
+ *
+ * Wording is uppercase and terse because that's what fits on a screen
+ * with a 4-letter vocabulary. READY, not "Listening…".
+ *
+ * No pixel font is installed on most systems, so this uses a monospace
+ * face with wide tracking -- the rhythm of fixed-width glyphs is the part
+ * that reads as a game, more than the letterforms themselves. */
+
+window { background-color: transparent; }
+
+#zt-panel {
+  margin: 40px;
+  background-color: #9bbc0f;
+  border-radius: 4px;
+  /* The console bezel: dark LCD surround, not a shadow. */
+  border: 3px solid #0f380f;
+  box-shadow:
+    inset 0 0 0 2px #8bac0f,
+    0 4px 0 #306230,
+    0 10px 24px rgba(15, 56, 15, 0.55);
+  padding: 9px 16px;
+  min-width: 240px;
+}
+
+#zt-label {
+  color: #0f380f;
+  font-family: "Press Start 2P", "Ubuntu Mono", "Liberation Mono", monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+#zt-accent  { color: #0f380f; }
+#zt-muted   { color: #306230; }
+#zt-success { color: #0f380f; }
+#zt-meter   { color: #306230; }
+#zt-tile    { color: rgba(15, 56, 15, 0.22); }

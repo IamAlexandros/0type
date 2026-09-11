@@ -116,6 +116,8 @@ func loadTheme(flagValue string, cfg *config.Config) (*theme.Theme, error) {
 func applyTheme(win *ui.Window, th *theme.Theme) {
 	win.LoadCSS(th.CSS)
 	win.SetMark(ui.Mark(th.Mark))
+	win.SetIdleText(th.Idle)
+	win.SetCopiedText(th.Copied)
 }
 
 // app owns the live-capture pipeline's lifecycle: started on show, stopped

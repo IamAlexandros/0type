@@ -1,0 +1,49 @@
+/* 0type "aqua" -- Mac OS X Aqua, circa 10.3.
+ *
+ * 0type-idle: Listening…
+ * 0type-copied: Copied to Clipboard
+ *
+ * Aqua's trick was that everything looked like a wet lozenge: a strong
+ * white specular highlight across the *top half only*, a saturated blue
+ * body, and a fully round end cap. The highlight is the whole effect, so
+ * it's a gradient that goes bright-white to transparent by 50% and then
+ * stays out of the way.
+ *
+ * Radius is half the panel height, making a true capsule -- Aqua buttons
+ * were never merely rounded.
+ *
+ * The counterpart to macclassic: same company, fifteen years and an
+ * entire design philosophy apart. */
+
+window { background-color: transparent; }
+
+#zt-panel {
+  margin: 44px;
+  background-image: linear-gradient(to bottom,
+    rgba(255, 255, 255, 0.92) 0%,
+    rgba(255, 255, 255, 0.35) 42%,
+    rgba(255, 255, 255, 0.04) 50%,
+    rgba(255, 255, 255, 0.10) 100%);
+  background-color: #2f7fe0;
+  border-radius: 26px;
+  border: 1px solid rgba(10, 60, 130, 0.55);
+  box-shadow:
+    inset 0 -2px 4px rgba(255, 255, 255, 0.35),
+    0 2px 4px rgba(0, 0, 0, 0.30),
+    0 8px 20px rgba(0, 0, 0, 0.35);
+  padding: 10px 22px;
+  min-width: 240px;
+}
+
+#zt-label {
+  color: #10325f;
+  font-family: "Liberation Sans", "DejaVu Sans", sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+#zt-accent  { color: #0b47a0; }
+#zt-muted   { color: rgba(20, 60, 110, 0.62); }
+#zt-success { color: #0d6b2f; }
+#zt-meter   { color: #123a70; }
+#zt-tile    { color: rgba(10, 50, 100, 0.16); }

@@ -142,7 +142,8 @@ typedef struct {
 	GtkWidget *probe_meter;   // level bars
 	GtkWidget *probe_tile;    // the mark's tile surface
 
-	int mark; // which brand mark to draw (MARK_MIC/MARK_PIXEL/MARK_ZERO)
+	int mark;         // which brand mark to draw (MARK_MIC/MARK_PIXEL/MARK_ZERO)
+	char *idle_text;  // themeable placeholder shown when there's nothing to say
 
 	// Menu mode. The same drawing area renders either the dictation bar or
 	// a menu, rather than there being a second window: the panel's look,
@@ -182,7 +183,10 @@ typedef struct {
 #define MARK_MIC         0
 #define MARK_PIXEL       1
 #define MARK_ZERO        2
-#define IDLE_TEXT        "Listening…"
+// IDLE_TEXT_DEFAULT is only a fallback; the wording is a theme's choice
+// (see internal/theme's idle directive), because a pastiche that keeps
+// saying "Listening…" in someone else's voice isn't much of a pastiche.
+#define IDLE_TEXT_DEFAULT "Listening…"
 #define FADE_W           40.0
 
 // The pixel-art mark is a bitmap rather than a scaled-down vector: 8-bit
@@ -369,7 +373,7 @@ static void draw_content(GtkWidget *area, cairo_t *cr, int width, int height, Sl
 	cairo_clip(cr);
 
 	gboolean idle = (s->text == NULL || s->text[0] == '\0');
-	const char *text = idle ? IDLE_TEXT : s->text;
+	const char *text = idle ? (s->idle_text ? s->idle_text : IDLE_TEXT_DEFAULT) : s->text;
 	PangoLayout *layout = gtk_widget_create_pango_layout(area, text);
 	pango_layout_set_single_paragraph_mode(layout, TRUE);
 	if (idle) {
@@ -654,6 +658,12 @@ static void menu_dismiss(SlideState *s, GtkWidget *window, GtkWidget *panel, int
 	gtk_drawing_area_set_content_width(GTK_DRAWING_AREA(s->area), width);
 	gtk_drawing_area_set_content_height(GTK_DRAWING_AREA(s->area), height);
 	resize_to_content(window, panel);
+}
+
+static void slide_set_idle_text(SlideState *s, const char *text) {
+	g_free(s->idle_text);
+	s->idle_text = g_strdup(text);
+	gtk_widget_queue_draw(s->area);
 }
 
 static void slide_set_mark(SlideState *s, int mark) {
@@ -1074,6 +1084,10 @@ type Window struct {
 	slide *C.SlideState
 	loop  *C.GMainLoop
 
+	// copiedText is the theme's wording for the end-of-session
+	// confirmation; empty means the built-in phrasing.
+	copiedText string
+
 	// centered selects where the next Show puts the window: the middle of
 	// the screen (the menu, which you look at) rather than near the bottom
 	// (the dictation bar, which should stay out of the way of whatever
@@ -1088,6 +1102,14 @@ type Window struct {
 // already showing. It must be called from the same goroutine that will
 // later call Run.
 func New(initialText string) (*Window, error) {
+	// Before GTK builds its font map: fonts registered afterwards may not
+	// be picked up by an already-initialized Pango context.
+	if err := registerBundledFonts(); err != nil {
+		// Cosmetic, not fatal -- a theme that wanted a bundled font falls
+		// back to its next choice.
+		fmt.Fprintln(os.Stderr, "0type:", err)
+	}
+
 	if C.gtk_init_check() == C.FALSE {
 		return nil, fmt.Errorf("ui: gtk_init_check failed (no display? is Xwayland available?)")
 	}
@@ -1212,7 +1234,11 @@ func (w *Window) SetLevel(level float64) {
 // confirmation). Must be called from the GTK main thread -- use
 // RunOnMainThread from any other goroutine.
 func (w *Window) ShowCopiedConfirmation() {
-	withCString("Copied to clipboard", func(c *C.char) { C.slide_show_confirmation(w.slide, c) })
+	text := w.copiedText
+	if text == "" {
+		text = "Copied to clipboard"
+	}
+	withCString(text, func(c *C.char) { C.slide_show_confirmation(w.slide, c) })
 }
 
 // Show makes the window visible and plays its intro animation (fade in
@@ -1321,6 +1347,19 @@ func (w *Window) SelectMenuItem(index int) {
 // the GTK main thread.
 func (w *Window) DismissMenu() {
 	C.menu_dismiss(w.slide, w.win, w.panel, viewportWidthPx, viewportHeightPx)
+}
+
+// SetIdleText sets the placeholder shown when there's no transcript yet,
+// and SetCopiedText the end-of-session confirmation. Both are a theme's
+// choice (see internal/theme). Empty restores the built-in wording. Must
+// be called from the GTK main thread.
+func (w *Window) SetIdleText(text string) {
+	withCString(text, func(c *C.char) { C.slide_set_idle_text(w.slide, c) })
+}
+
+// SetCopiedText sets the wording of the "copied" confirmation.
+func (w *Window) SetCopiedText(text string) {
+	w.copiedText = text
 }
 
 // SetCentered chooses where the next Show places the window: centered on

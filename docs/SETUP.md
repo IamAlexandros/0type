@@ -688,3 +688,55 @@ Note that this rules out "type to filter" in the menu without first
 solving the focus problem differently -- e.g. making the window a normal
 managed window while the menu is up, so Mutter focuses it and keeps
 handling its own keybindings, instead of grabbing.
+
+## Bundled fonts
+
+Pastiche themes live or die on typography, and the fonts they need are
+exactly the ones no Linux box has: this machine had no pixel font at all,
+and none of Tahoma, Segoe UI, Chicago or MS Sans Serif.
+
+Two options were rejected. Shipping themes that reference fonts the user
+must install first makes "bundled theme" a lie. Writing into
+`~/.local/share/fonts` would change what *every other program* on the
+machine sees, to fix a cosmetic problem in one.
+
+What's done instead: the .ttf files are embedded with `go:embed`,
+materialized once into `~/.cache/0type/fonts/` (fontconfig takes a path,
+not bytes; the cached name includes a hash of the contents so an upgraded
+font isn't shadowed by a stale file), and registered with
+`FcConfigAppFontAddFile(NULL, path)` — which adds them to *this process's*
+font configuration only. That call happens in `ui.New` before
+`gtk_init_check`, because fonts added after Pango has built its font map
+may not be picked up.
+
+Font choices, all SIL Open Font License 1.1 (license texts ship in the
+tarball's `licenses/`, as the license requires):
+
+- **Press Start 2P** — arcade/NES pixel type: `gameboy`, `c64`.
+- **Silkscreen** — a much smaller pixel face, closer to a phone or LCD
+  cell: `nokia3310`, `tamagotchi`, `winamp`. Note it is uppercase-only,
+  which happens to be authentic for all three.
+- **VT323** — terminal: `dos`.
+- **Selawik** — Microsoft's own metric-compatible substitute for Segoe
+  UI, and the closest licensable thing to the MS UI look: `vista`,
+  `winxp`, `win98`, `xbox`.
+
+Failure here is deliberately non-fatal: if registration fails the theme
+falls back to its next font choice, which is a cosmetic problem and not a
+reason to refuse to start.
+
+## Theme notes worth keeping
+
+- **GTK's `background-position` accepts two values, not four.**
+  `right 9px top 7px` parses as far as `right 9px` and then logs
+  "Junk at end of value", silently dropping the rest — which parked the
+  XP window buttons in the top-left corner. Percentages work.
+- **Multiple background layers do work**, which is what makes the XP
+  theme a window rather than a blue bar: one gradient paints the title
+  bar and client area using hard color stops at the same offset
+  (`#0a4bb5 28px, #d8d2bc 28px`), and two more layers put the close
+  button and the minimise/maximise pair on top of it. The content is
+  pushed below the title bar with an asymmetric `padding-top`.
+- **Bevels come from stacked inset box-shadows**, outermost first —
+  white/light on the top-left, dark/black on the bottom-right. That's the
+  whole of Win98's and Winamp's chrome.

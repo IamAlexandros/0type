@@ -1,0 +1,42 @@
+/* 0type "macclassic" -- System 6/7, black on white.
+ *
+ * 0type-mark: zero
+ * 0type-idle: Listening…
+ * 0type-copied: Copied to the Clipboard
+ *
+ * Classic Mac chrome is the opposite of every other theme here: no
+ * color, no gradient, no softness. A 1px black rectangle on white, and a
+ * hard black drop shadow offset down-right with no blur at all -- that
+ * shadow is the entire depth model of the system.
+ *
+ * Chicago isn't on modern machines, so this uses a bold grotesque at a
+ * small size, which is the closest thing a default font stack has to it.
+ *
+ * The mark is the geometric zero rather than a microphone: a 1984 Mac
+ * would have drawn a shape, not an icon of a device. */
+
+window { background-color: transparent; }
+
+#zt-panel {
+  margin: 40px;
+  background-color: #ffffff;
+  border-radius: 0;
+  border: 1px solid #000000;
+  /* No blur: the classic Mac shadow is a solid offset rectangle. */
+  box-shadow: 4px 4px 0 #000000;
+  padding: 10px 18px;
+  min-width: 240px;
+}
+
+#zt-label {
+  color: #000000;
+  font-family: "Liberation Sans", "DejaVu Sans", sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+#zt-accent  { color: #000000; }
+#zt-muted   { color: #808080; }
+#zt-success { color: #000000; }
+#zt-meter   { color: #000000; }
+#zt-tile    { color: rgba(0, 0, 0, 0.12); }

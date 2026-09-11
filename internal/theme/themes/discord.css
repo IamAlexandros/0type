@@ -1,0 +1,41 @@
+/* 0type "discord" -- the dark client.
+ *
+ * 0type-idle: Listening…
+ * 0type-copied: Copied to clipboard
+ *
+ * Discord's dark theme is three grays and one very saturated color:
+ * #313338 surface, #1e1f22 shadow/edges, #2b2d31 sunken, and blurple
+ * #5865f2 for anything interactive. The green is its "online" dot,
+ * #23a55a, which is exactly the right thing for a confirmation.
+ *
+ * Everything is rounded generously (8px on small things) and there's no
+ * border -- separation comes from the surface being lighter than what's
+ * behind it, plus a soft shadow. */
+
+window { background-color: transparent; }
+
+#zt-panel {
+  margin: 44px;
+  background-color: #313338;
+  border-radius: 10px;
+  border: 1px solid #232428;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 2px 6px rgba(0, 0, 0, 0.35),
+    0 10px 28px rgba(0, 0, 0, 0.45);
+  padding: 10px 20px;
+  min-width: 240px;
+}
+
+#zt-label {
+  color: #f2f3f5;
+  font-family: "Noto Sans", "DejaVu Sans", Cantarell, sans-serif;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+#zt-accent  { color: #5865f2; }  /* blurple */
+#zt-muted   { color: #949ba4; }
+#zt-success { color: #23a55a; }  /* the online dot */
+#zt-meter   { color: #b5bac1; }
+#zt-tile    { color: rgba(255, 255, 255, 0.06); }

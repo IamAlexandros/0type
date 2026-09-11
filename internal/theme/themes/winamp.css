@@ -1,0 +1,49 @@
+/* 0type "winamp" -- it really whips the llama's ass.
+ *
+ * 0type-mark: pixel
+ * 0type-idle: READY
+ * 0type-copied: COPIED
+ *
+ * The classic skin is a dark gray metal panel with a black inset display
+ * in the middle of it, and everything readable on that display is a
+ * bright green bitmap font. So: gray chrome built from the same bevel
+ * trick as win98 but inverted (light edge on top, black below), and green
+ * pixels for the text.
+ *
+ * Winamp's own accents were green for the display and a dull yellow for
+ * the track title, which is why "copied" is yellow here rather than the
+ * usual green -- green is already the resting state. */
+
+window { background-color: transparent; }
+
+#zt-panel {
+  margin: 40px;
+  background-color: #3a3a42;
+  border-radius: 0;
+  border: none;
+  box-shadow:
+    inset  1px  1px 0 #6e6e7a,
+    inset -1px -1px 0 #16161a,
+    inset  2px  2px 0 #4c4c56,
+    inset -2px -2px 0 #26262c,
+    /* the black display area the text sits on */
+    inset 0 0 0 6px #3a3a42,
+    0 4px 0 #1b1b20,
+    0 12px 28px rgba(0, 0, 0, 0.60);
+  padding: 10px 16px;
+  min-width: 240px;
+}
+
+#zt-label {
+  color: #00e526;
+  font-family: "Silkscreen", "Press Start 2P", monospace;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.5px;
+}
+
+#zt-accent  { color: #00e526; }
+#zt-muted   { color: #2c7a3c; }
+#zt-success { color: #ffe900; }   /* the track-title yellow */
+#zt-meter   { color: #00e526; }
+#zt-tile    { color: rgba(0, 229, 38, 0.12); }

@@ -1,0 +1,44 @@
+/* 0type "amber" -- an amber monochrome CRT.
+ *
+ * 0type-mark: pixel
+ * 0type-idle: AWAITING INPUT
+ * 0type-copied: >> BUFFER COPIED
+ *
+ * The sibling of "term": same hardware, different phosphor. Amber (P3)
+ * monitors were sold as the easier-on-the-eyes alternative to green, and
+ * the difference in feel is almost entirely the glow -- so unlike term,
+ * which deliberately has none, this one keeps a bloom. A CRT that isn't
+ * blooming is a CRT that's switched off.
+ *
+ * Everything is one hue at different intensities, because a monochrome
+ * monitor could not do otherwise. */
+
+window { background-color: transparent; }
+
+#zt-panel {
+  margin: 44px;
+  background-color: rgba(14, 9, 2, 0.96);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 176, 0, 0.28);
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.55),
+    0 12px 32px rgba(0, 0, 0, 0.60),
+    0 0 26px rgba(255, 176, 0, 0.18),
+    0 0 60px rgba(255, 176, 0, 0.08);
+  padding: 10px 20px;
+  min-width: 240px;
+}
+
+#zt-label {
+  color: rgba(255, 190, 70, 0.96);
+  font-family: "Adwaita Mono", "Noto Sans Mono", "Liberation Mono", monospace;
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: 0.4px;
+}
+
+#zt-accent  { color: rgba(255, 176, 0, 0.95); }
+#zt-muted   { color: rgba(160, 110, 30, 0.92); }
+#zt-success { color: rgba(255, 224, 150, 0.98); }
+#zt-meter   { color: rgba(255, 176, 0, 1.0); }
+#zt-tile    { color: rgba(255, 176, 0, 0.10); }
