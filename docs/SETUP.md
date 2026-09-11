@@ -67,6 +67,41 @@ Try it:
 # -> "The quick brown fox jumps over the lazy dog."
 ```
 
+## Streaming (live mic)
+
+```sh
+./bin/0type listen
+```
+
+Captures from the default mic and prints `partial:`/`final:` lines live as
+you speak (Ctrl+C to stop). This is v1's streaming approximation (see
+`internal/stream`): audio accumulates per-utterance, gets re-decoded every
+~1s while you're speaking, and a simple dBFS-threshold VAD with a hangover
+period decides when an utterance is over. True frame-level cache-aware
+streaming (NVIDIA's lowest-latency mode) is a possible future upgrade, not
+implemented here.
+
+To debug the streaming/VAD pipeline without a live mic, replay a WAV file
+through the exact same code path:
+
+```sh
+./bin/0type debug stream-file testdata/hello.wav
+```
+
+Known v1 limitation: very short segments can occasionally make the model
+hallucinate a filler word (e.g. "Mm.") on an early partial. This is cosmetic
+— it gets overwritten by the next decode pass and never affects the final
+result — and is only partially mitigated by `Config.MinSamplesForPartial`
+(see `internal/stream/stream.go`).
+
+**Debugging note:** while building this, a real bug was found and fixed —
+the original capture loop called the (hundreds-of-ms) decode pass
+synchronously in the same loop as ALSA reads, which overran the capture
+device's small hardware buffer and silently corrupted/truncated transcripts.
+Audio capture now runs on its own goroutine (`audio.StreamChunks`),
+decoupled from decode timing via a buffered channel. The regression test
+for this lives at `internal/stream/integration_test.go`.
+
 ## ONNX Runtime API version gotcha
 
 `go.mod` pins `github.com/yalue/onnxruntime_go` to **v1.17.0**, not latest.
