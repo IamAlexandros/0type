@@ -3,10 +3,14 @@
  * 0type-mark: pixel
  *
  * Everything the other themes do to look soft and ambient is inverted
- * here: a monospace face, a near-square border, a hard 1px phosphor-green
- * rule instead of a hairline, and a green bloom instead of a neutral drop
- * shadow. The panel is nearly opaque because a terminal is a surface you
- * read, not a pane you see through.
+ * here: a monospace face, a near-square border, and a hard 1px
+ * phosphor-green rule instead of a hairline. The panel is nearly opaque
+ * because a terminal is a surface you read, not a pane you see through.
+ *
+ * No glow. A colored bloom around the panel is a CRT effect, and a
+ * terminal emulator is a flat rectangle on a desktop -- the halo made it
+ * read as a neon sign rather than a window. Depth comes from a plain
+ * neutral drop shadow, the same way any real window's does.
  *
  * Font stack: Adwaita Mono is GNOME's, JetBrains Mono is a common
  * install, and the rest are the near-certain fallbacks (Noto/Liberation
@@ -32,11 +36,8 @@ window {
   border-radius: 6px;
   border: 1px solid rgba(64, 255, 148, 0.30);
   box-shadow:
-    inset 0 0 0 1px rgba(64, 255, 148, 0.05),
     0 2px 6px rgba(0, 0, 0, 0.55),
-    0 12px 32px rgba(0, 0, 0, 0.60),
-    0 0 28px rgba(64, 255, 148, 0.16),
-    0 0 64px rgba(64, 255, 148, 0.07);
+    0 12px 32px rgba(0, 0, 0, 0.60);
   padding: 10px 20px;
   min-width: 240px;
 }
