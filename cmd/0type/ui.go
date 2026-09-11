@@ -17,6 +17,7 @@ func runUI(args []string) error {
 		return fmt.Errorf("create window: %w", err)
 	}
 	win.LoadCSS("themes/default.css")
+	win.Show()
 	win.Run()
 	return nil
 }

@@ -85,6 +85,47 @@ func TestRunner_SamePartialTextProducesNoDuplicateEvent(t *testing.T) {
 	}
 }
 
+func TestRunner_PartialNeverRegressesToBlank(t *testing.T) {
+	// Regression test for a real bug: a later decode pass over the same
+	// growing segment can legitimately return "" (e.g. more accumulated
+	// silence shifting the model's read of ambiguous audio), but that must
+	// never blank out already-displayed good text.
+	fake := &fakeTranscriber{result: "hello world"}
+	clock := time.Unix(0, 0)
+	cfg := noMinLength()
+	r := NewRunner(cfg, fake, func() time.Time { return clock })
+
+	events, err := r.Feed([]float32{0.1}, -10) // "hello world"
+	if err != nil {
+		t.Fatalf("Feed: %v", err)
+	}
+	if len(events) != 1 || events[0].Text != "hello world" {
+		t.Fatalf("events = %+v, want one Partial 'hello world'", events)
+	}
+
+	fake.result = ""
+	clock = clock.Add(cfg.DecodeInterval)
+	events, err = r.Feed([]float32{0.1}, -10)
+	if err != nil {
+		t.Fatalf("Feed: %v", err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("events = %+v, want none -- an empty decode must not emit a blanking Partial", events)
+	}
+
+	// A subsequent real result must still diff correctly against the last
+	// known non-empty text, not against "".
+	fake.result = "hello world again"
+	clock = clock.Add(cfg.DecodeInterval)
+	events, err = r.Feed([]float32{0.1}, -10)
+	if err != nil {
+		t.Fatalf("Feed: %v", err)
+	}
+	if len(events) != 1 || events[0].Text != "hello world again" || events[0].StableWords != 2 {
+		t.Fatalf("events = %+v, want one Partial 'hello world again' with StableWords=2", events)
+	}
+}
+
 func TestRunner_StableWordsReflectsUnchangedPrefix(t *testing.T) {
 	fake := &fakeTranscriber{result: "the quick"}
 	clock := time.Unix(0, 0)
@@ -105,6 +146,41 @@ func TestRunner_StableWordsReflectsUnchangedPrefix(t *testing.T) {
 	}
 	if events[0].StableWords != 2 {
 		t.Errorf("StableWords = %d, want 2 (\"the quick\" unchanged)", events[0].StableWords)
+	}
+}
+
+func TestRunner_SegmentDoesNotGrowDuringSilenceAfterUtterance(t *testing.T) {
+	// Regression test for a real bug found running the live app: silence
+	// following an utterance kept being appended to the segment forever
+	// (Feed used to append unconditionally), so the buffer -- and the
+	// per-decode-pass transcribe cost -- grew without bound the whole time
+	// 0type sat listening to silence, pegging CPU and never producing
+	// another update.
+	fake := &fakeTranscriber{result: "hello world"}
+	cfg := noMinLength()
+	cfg.SilenceHangoverChunks = 2
+	r := NewRunner(cfg, fake, nil)
+
+	r.Feed([]float32{0.1, 0.2}, -10)                // speech
+	r.Feed([]float32{0.1, 0.2}, -60)                // silence 1 (under hangover)
+	events, err := r.Feed([]float32{0.1, 0.2}, -60) // silence 2 -> end of utterance
+	if err != nil {
+		t.Fatalf("Feed: %v", err)
+	}
+	if len(events) != 1 || events[0].Kind != Final {
+		t.Fatalf("events = %+v, want one Final", events)
+	}
+	if got := r.SegmentSamples(); got != 0 {
+		t.Fatalf("SegmentSamples() after finalize = %d, want 0", got)
+	}
+
+	for i := 0; i < 100; i++ {
+		if _, err := r.Feed([]float32{0.1, 0.2}, -96); err != nil {
+			t.Fatalf("Feed: %v", err)
+		}
+	}
+	if got := r.SegmentSamples(); got != 0 {
+		t.Fatalf("SegmentSamples() after 100 silent chunks post-utterance = %d, want 0 (unbounded growth bug)", got)
 	}
 }
 

@@ -1,6 +1,6 @@
 // Package ui implements 0type's floating overlay window: a small,
-// Raycast-style panel positioned near the top-center of the screen, with
-// no taskbar/alt-tab presence.
+// Raycast-style panel positioned near the bottom-center of the screen,
+// with no taskbar/alt-tab presence.
 //
 // Positioning approach: GNOME's compositor (Mutter) does not implement the
 // wlr-layer-shell protocol (a wlroots-ecosystem extension; see
@@ -92,6 +92,23 @@ static void widget_set_name(GtkWidget *widget, const char *name) {
 	gtk_widget_set_name(widget, name);
 }
 
+// mark_label_updating and schedule_clear_updating together produce a brief
+// fade on each text update: the CSS class add is instant (no transition on
+// add), then removing it shortly after triggers #zt-label's CSS
+// `transition: opacity` back up to 1 (see themes/default.css).
+static void mark_label_updating(GtkWidget *label) {
+	gtk_widget_add_css_class(label, "zt-updating");
+}
+
+static gboolean clear_updating_cb(gpointer data) {
+	gtk_widget_remove_css_class((GtkWidget *)data, "zt-updating");
+	return G_SOURCE_REMOVE;
+}
+
+static void schedule_clear_updating(GtkWidget *label, guint delay_ms) {
+	g_timeout_add(delay_ms, clear_updating_cb, label);
+}
+
 static void load_css(const char *path) {
 	GtkCssProvider *provider = gtk_css_provider_new();
 	gtk_css_provider_load_from_path(provider, path);
@@ -129,7 +146,7 @@ static void prepare_overlay(GtkWidget *window, int width) {
 
 typedef struct {
 	GtkWidget *window;
-	int top_margin;
+	int bottom_margin;
 } RepositionCtx;
 
 static gboolean reposition_cb(gpointer data) {
@@ -143,12 +160,18 @@ static gboolean reposition_cb(gpointer data) {
 	XWindowAttributes real;
 	XGetWindowAttributes(xdisplay, xid, &real);
 
-	int screen_w = DisplayWidth(xdisplay, DefaultScreen(xdisplay));
+	int screen = DefaultScreen(xdisplay);
+	int screen_w = DisplayWidth(xdisplay, screen);
+	int screen_h = DisplayHeight(xdisplay, screen);
 	int x = (screen_w - real.width) / 2;
 	if (x < 0) {
 		x = 0;
 	}
-	XMoveWindow(xdisplay, xid, x, ctx->top_margin);
+	int y = screen_h - real.height - ctx->bottom_margin;
+	if (y < 0) {
+		y = 0;
+	}
+	XMoveWindow(xdisplay, xid, x, y);
 	XSync(xdisplay, False);
 
 	free(ctx);
@@ -156,15 +179,15 @@ static gboolean reposition_cb(gpointer data) {
 }
 
 // schedule_reposition centers window horizontally and anchors it
-// top_margin pixels from the top, delay_ms after being called -- long
-// enough for GTK to have finished its first real layout pass (see
-// prepare_overlay) so the window's actual raw X11 size is known, avoiding
-// the logical-vs-physical-pixel mismatch a scaled session would otherwise
-// hit if we tried to compute this synchronously.
-static void schedule_reposition(GtkWidget *window, int top_margin, guint delay_ms) {
+// bottom_margin pixels above the bottom of the screen, delay_ms after
+// being called -- long enough for GTK to have finished its first real
+// layout pass (see prepare_overlay) so the window's actual raw X11 size is
+// known, avoiding the logical-vs-physical-pixel mismatch a scaled session
+// would otherwise hit if we tried to compute this synchronously.
+static void schedule_reposition(GtkWidget *window, int bottom_margin, guint delay_ms) {
 	RepositionCtx *ctx = malloc(sizeof(RepositionCtx));
 	ctx->window = window;
-	ctx->top_margin = top_margin;
+	ctx->bottom_margin = bottom_margin;
 	g_timeout_add(delay_ms, reposition_cb, ctx);
 }
 */
@@ -193,21 +216,32 @@ func init() {
 }
 
 const (
-	topMarginPx = 64
-	windowWidth = 480 // must stay >= themes/*.css's #zt-panel min-width
+	bottomMarginPx = 56
+	// windowWidth is a floor, not the visual panel width: #zt-panel in
+	// themes/*.css sits inset from the window edge by its own CSS margin,
+	// so the panel's glow (a box-shadow, which GTK clips hard at the
+	// window boundary) has room to fall off smoothly instead of being cut
+	// off flush -- the window is expected to end up wider than this once
+	// that margin is included in its natural size.
+	windowWidth = 400
 	// maxLabelWidthChars bounds the label's natural width so long text
-	// wraps within windowWidth instead of growing the window to fit one
-	// line. Tuned for windowWidth=480 at the default theme's font size.
-	maxLabelWidthChars = 42
+	// wraps within the panel instead of growing it to fit one line.
+	// Tuned for the default theme's font size and panel padding/margin.
+	maxLabelWidthChars = 28
 	// repositionDelayMs must exceed how long GTK takes to finish its
 	// first real layout pass after being shown; measured at ~well under
 	// 500ms during development, so 150ms leaves comfortable margin
 	// without being a noticeable visible delay/jump.
 	repositionDelayMs = 150
+	// textFadeDelayMs is how long the label stays dimmed (via the
+	// "zt-updating" CSS class) before fading back to full opacity -- long
+	// enough to register as a visible flash-and-settle, short enough to
+	// not lag behind fast successive updates.
+	textFadeDelayMs = 40
 )
 
 // Window is 0type's floating overlay: a small panel positioned near the
-// top-center of the screen, override-redirect (no window manager
+// bottom-center of the screen, override-redirect (no window manager
 // decoration, no taskbar/alt-tab entry).
 type Window struct {
 	win   *C.GtkWidget
@@ -245,10 +279,28 @@ func (w *Window) LoadCSS(path string) {
 	withCString(path, func(c *C.char) { C.load_css(c) })
 }
 
-// SetText updates the label's text. Must be called from the GTK main
-// thread -- use RunOnMainThread from any other goroutine.
+// SetText updates the label's text, with a brief dim-then-fade-in
+// animation (see themes/default.css's #zt-label transition and the
+// "zt-updating" class). Must be called from the GTK main thread -- use
+// RunOnMainThread from any other goroutine.
 func (w *Window) SetText(text string) {
+	C.mark_label_updating(w.label)
 	withCString(text, func(c *C.char) { C.label_set_text(w.label, c) })
+	C.schedule_clear_updating(w.label, textFadeDelayMs)
+}
+
+// Show makes the window visible and (re-)positions it. Must be called
+// from the GTK main thread -- use RunOnMainThread from any other
+// goroutine.
+func (w *Window) Show() {
+	C.widget_set_visible(w.win, C.TRUE)
+	C.schedule_reposition(w.win, C.int(bottomMarginPx), repositionDelayMs)
+}
+
+// Hide makes the window invisible. Must be called from the GTK main
+// thread -- use RunOnMainThread from any other goroutine.
+func (w *Window) Hide() {
+	C.widget_set_visible(w.win, C.FALSE)
 }
 
 // RunOnMainThread schedules fn to run on the GTK main loop thread as soon
@@ -264,12 +316,12 @@ func RunOnMainThread(fn func()) {
 	C.schedule_idle_source(C.guintptr(h))
 }
 
-// Run positions and shows the window, then blocks running the GTK main
-// loop until it's asked to quit (via Quit, or SIGINT/SIGTERM).
+// Run prepares the window (realized, override-redirect, not yet shown --
+// use Show/Hide to control visibility, e.g. from internal/toggle) and
+// blocks running the GTK main loop until it's asked to quit (via Quit, or
+// SIGINT/SIGTERM).
 func (w *Window) Run() {
 	C.prepare_overlay(w.win, C.int(windowWidth))
-	C.widget_set_visible(w.win, C.TRUE)
-	C.schedule_reposition(w.win, C.int(topMarginPx), repositionDelayMs)
 
 	w.loop = C.g_main_loop_new(nil, C.FALSE)
 	installQuitSignal := func(signum C.int) {

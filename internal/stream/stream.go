@@ -80,6 +80,12 @@ type Runner struct {
 	lastDecodeAt time.Time
 }
 
+// SegmentSamples returns the number of samples accumulated for the
+// current (not yet finalized) utterance. Mainly useful for diagnostics.
+func (r *Runner) SegmentSamples() int {
+	return len(r.segment)
+}
+
 // NewRunner creates a Runner. Pass nil for now to use time.Now; tests
 // inject a deterministic clock instead.
 func NewRunner(cfg Config, asr Transcriber, now func() time.Time) *Runner {
@@ -94,16 +100,21 @@ func NewRunner(cfg Config, asr Transcriber, now func() time.Time) *Runner {
 	}
 }
 
-// Feed appends one chunk of audio (float32, normalized to [-1, 1]) with its
-// measured level (dBFS), runs a decode pass if one is due, and returns any
-// events produced. There is at most one event per Feed call: either a
-// Partial (new stabilized text from a decode pass) or a Final (the
-// utterance just ended).
+// Feed processes one chunk of audio (float32, normalized to [-1, 1]) with
+// its measured level (dBFS): if VAD considers it part of the current
+// utterance, it's appended to the accumulating segment (genuine
+// between-utterance silence is discarded, not accumulated -- otherwise it
+// would grow the segment without bound); a decode pass runs if one is due;
+// and any resulting events are returned. There is at most one event per
+// Feed call: either a Partial (new stabilized text from a decode pass) or
+// a Final (the utterance just ended).
 func (r *Runner) Feed(chunk []float32, chunkDB float64) ([]Event, error) {
 	var events []Event
-	r.segment = append(r.segment, chunk...)
 
-	_, endOfUtterance := r.vad.Update(chunkDB)
+	_, active, endOfUtterance := r.vad.Update(chunkDB)
+	if active {
+		r.segment = append(r.segment, chunk...)
+	}
 
 	if endOfUtterance && len(r.segment) > 0 {
 		text, err := r.asr.Transcribe(r.segment)
@@ -134,6 +145,15 @@ func (r *Runner) Feed(chunk []float32, chunkDB float64) ([]Event, error) {
 	}
 	r.lastDecodeAt = r.now()
 	if text == r.lastPartial {
+		return events, nil
+	}
+	// A later decode pass over the same (growing) segment can legitimately
+	// return "" -- e.g. more accumulated silence/noise shifting the
+	// model's read of ambiguous audio -- but a Partial must never regress
+	// already-displayed text to blank; just wait for the next pass rather
+	// than emit anything. (Final already only fires on non-empty text;
+	// this mirrors that for Partial.)
+	if text == "" {
 		return events, nil
 	}
 	stable := StablePrefixWords(r.lastPartial, text)

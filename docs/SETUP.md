@@ -74,15 +74,18 @@ Two gotchas hit while building this, both now handled in
 Verify positioning/no-taskbar behavior without relying on a screenshot
 (useful in a headless/remote session where screen capture may not work at
 all — confirmed on this dev machine, `grim`/`scrot` both return a black
-image regardless of what's on screen):
+image regardless of what's on screen; `import -window <id>` from
+ImageMagick, targeting the specific window rather than the whole screen,
+worked when those didn't):
 
 ```sh
 ./bin/0type ui &
 DISPLAY=:0 xdotool search --onlyvisible "" | while read -r id; do
   DISPLAY=:0 xdotool getwindowpid "$id"   # match against the 0type pid
 done
-DISPLAY=:0 xdotool getwindowgeometry <id> # should show centered x, y=64
+DISPLAY=:0 xdotool getwindowgeometry <id> # should show centered x, near the bottom
 DISPLAY=:0 wmctrl -l                      # 0type must NOT appear here
+DISPLAY=:0 import -window <id> out.png    # actually see it
 ```
 
 Verify everything is resolvable via pkg-config:
@@ -155,6 +158,77 @@ device's small hardware buffer and silently corrupted/truncated transcripts.
 Audio capture now runs on its own goroutine (`audio.StreamChunks`),
 decoupled from decode timing via a buffered channel. The regression test
 for this lives at `internal/stream/integration_test.go`.
+
+## The full app: show/hide, and two more real bugs found live
+
+```sh
+./bin/0type &          # loads the model once, starts hidden, writes a pidfile
+./bin/0type toggle      # show/hide the window -- starts/stops mic capture with it
+```
+
+For a global hotkey (Wayland doesn't let an unfocused app grab one itself):
+GNOME Settings → Keyboard → Keyboard Shortcuts → Custom Shortcuts → add a
+shortcut whose command is the **full path** to the binary plus `toggle`
+(custom shortcuts don't reliably inherit your shell `PATH`), e.g.
+`/home/you/projects/0type/bin/0type toggle`.
+
+Testing the full pipeline against real audio (via a PipeWire loopback --
+`pactl load-module module-null-sink`, set as the default source, `paplay`
+a WAV into it) surfaced two further real bugs, both now covered by
+regression tests:
+
+- **A `Partial` could blank out already-good text.** A later decode pass
+  over the same growing segment can legitimately return `""` (more
+  accumulated silence/noise shifting the model's read of ambiguous audio),
+  but `Feed` was emitting that as a `Partial` event anyway, overwriting
+  correct displayed text with nothing. Fixed by only ever emitting `Partial`
+  on non-empty text, mirroring how `Final` already worked. Regression test:
+  `TestRunner_PartialNeverRegressesToBlank`.
+- **The segment buffer grew without bound during silence.** `Feed` appended
+  *every* chunk to the segment unconditionally, including chunks arriving
+  while `VAD.speaking` was `false` (i.e. genuine between-utterance idle
+  silence, not just the trailing hangover window). After a finalize+reset,
+  any further silence — which is most of real listening time — kept getting
+  appended to the now-empty segment forever, since there was no more speech
+  left to ever trigger another end-of-utterance. Live, this pegged the CPU
+  (~780% cumulative) within a couple of minutes and froze the displayed text
+  in place, since each decode pass took longer than the last as the buffer
+  grew. `VAD.Update` now returns a third `active` value (speaking, or still
+  within the hangover grace window) and `Feed` only accumulates audio when
+  `active` is true — genuine idle silence is discarded, not buffered.
+  Regression tests: `TestVAD_SilenceAfterUtteranceIsNeverActive`,
+  `TestRunner_SegmentDoesNotGrowDuringSilenceAfterUtterance`.
+
+Both were invisible in isolated unit tests (which don't run long enough
+against enough silence) and only surfaced running the real app against real
+audio for more than a few seconds — worth remembering if something *feels*
+fine in `go test` but not in practice.
+
+## Theme design notes (bottom-anchored, glow, font)
+
+Positioned at the bottom-center now (`bottomMarginPx` in `internal/ui`),
+smaller than the original Phase 4 version, with a fade-on-update animation
+(toggling a `zt-updating` CSS class briefly dims `#zt-label`, then GTK's own
+`transition: opacity` on that selector eases it back — see `SetText`).
+
+One rendering gotcha worth knowing if you touch `themes/*.css`: **GTK clips
+`box-shadow` hard at the window's own edge.** `#zt-panel` used to fill the
+window edge-to-edge, so its glow got cut off flat instead of fading out —
+looked broken. Fixed with `margin: 44px` on `#zt-panel`, inset from the
+window boundary, giving the shadow room to fall off before hitting the
+clip edge. `internal/ui`'s `windowWidth` constant is a floor, not the
+visual panel width, precisely because of this — the window's real natural
+size ends up wider once that margin is included, and previous experience
+in this file (see the label-wrapping gotcha in Phase 4's section) is why we
+let natural sizing win rather than fighting it.
+
+`#zt-label`'s `font-family` lists `"Inter"` first (matches Raycast's own
+look) with a graceful fallback chain (`Cantarell`, `"Noto Sans"`, generic
+`sans-serif`) — Inter isn't installed on this dev machine, so it currently
+renders in Cantarell (GNOME's default UI font) at `font-weight: 600`; no
+font is bundled or required. If you want Inter specifically, install a font
+package that provides it and it'll be picked up automatically, no code
+change needed.
 
 ## ONNX Runtime API version gotcha
 

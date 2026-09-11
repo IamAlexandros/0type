@@ -19,7 +19,7 @@ func main() {
 
 func run(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("no subcommand yet implemented (version %s) - see docs/SETUP.md", version)
+		return runApp(nil)
 	}
 
 	switch args[0] {
@@ -34,6 +34,8 @@ func run(args []string) error {
 		return runListen(args[1:])
 	case "ui":
 		return runUI(args[1:])
+	case "toggle":
+		return runToggle(args[1:])
 	default:
 		return fmt.Errorf("unknown subcommand %q", args[0])
 	}
