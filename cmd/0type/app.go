@@ -53,14 +53,21 @@ func runApp(args []string) error {
 }
 
 // app owns the live-capture pipeline's lifecycle: started on show, stopped
-// on hide, so 0type never listens while its window isn't visible.
+// on hide, so 0type never listens while its window isn't visible. It also
+// owns the current session's accumulated dictation: every finished
+// sentence (stream.Final) is appended to it, the display always shows the
+// *whole session so far* (not just the current sentence) sliding as one
+// continuously growing line, and the complete result is copied to the
+// clipboard once, when the session ends (hideAndStop) -- not after each
+// sentence.
 type app struct {
 	win   *ui.Window
 	model *asr.Model
 
-	mu      sync.Mutex
-	visible bool
-	stop    chan struct{}
+	mu       sync.Mutex
+	visible  bool
+	stop     chan struct{}
+	dictated string // finalized sentences this session, space-joined
 }
 
 func (a *app) handleToggle() {
@@ -83,6 +90,7 @@ func (a *app) showAndListen() {
 		return
 	}
 	a.visible = true
+	a.dictated = ""
 	stop := make(chan struct{})
 	a.stop = stop
 	a.mu.Unlock()
@@ -92,6 +100,10 @@ func (a *app) showAndListen() {
 	go a.runPipeline(stop)
 }
 
+// hideAndStop ends the session: stops capture, hides the window, and only
+// then copies whatever was dictated to the clipboard -- once, not after
+// every sentence -- so the user gets one clean paste of the whole session
+// after they signal they're done.
 func (a *app) hideAndStop() {
 	a.mu.Lock()
 	if !a.visible {
@@ -101,11 +113,15 @@ func (a *app) hideAndStop() {
 	a.visible = false
 	stop := a.stop
 	a.stop = nil
+	dictated := a.dictated
 	a.mu.Unlock()
 
 	a.win.Hide()
 	if stop != nil {
 		close(stop)
+	}
+	if dictated != "" {
+		ui.SetClipboard(dictated) // hideAndStop already runs on the GTK main thread (see handleToggle)
 	}
 }
 
@@ -122,15 +138,15 @@ func (a *app) stopPipeline() {
 }
 
 // runPipeline owns one live-capture session end to end: opening the mic,
-// streaming chunks through a fresh stream.Runner, posting transcript
-// updates to the window, and copying finished sentences to the system
-// clipboard as they're recognized -- the display shows each sentence
-// forming live, but the clipboard accumulates every Final of the session
-// (reset each time a new session starts on show), so the user can dictate
-// several sentences and paste the whole thing once they're done, without
-// having to copy anything themselves. Mic open/close both happen in this
-// goroutine (see internal/audio.StreamChunks's doc comment) to avoid a
-// close-while-reading race with a handle shared across goroutines.
+// streaming chunks through a fresh stream.Runner, and updating the
+// display and a.dictated as speech is recognized. Every event (Partial or
+// Final) redraws the display as "everything finalized so far this
+// session" plus "the sentence currently in progress" combined into one
+// string, so the on-screen line keeps growing and sliding across the
+// whole session instead of resetting each time a sentence finalizes.
+// Mic open/close both happen in this goroutine (see
+// internal/audio.StreamChunks's doc comment) to avoid a close-while-
+// reading race with a handle shared across goroutines.
 func (a *app) runPipeline(stop chan struct{}) {
 	mic, err := audio.OpenCapture(sampleRate, channels)
 	if err != nil {
@@ -144,7 +160,6 @@ func (a *app) runPipeline(stop chan struct{}) {
 	chunkSamples := sampleRate * channels * chunkMS / 1000
 	chunks := audio.StreamChunks(mic, chunkSamples, stop)
 
-	var dictated string
 	for c := range chunks {
 		if c.Err != nil {
 			text := fmt.Sprintf("mic error: %v", c.Err)
@@ -157,20 +172,25 @@ func (a *app) runPipeline(stop chan struct{}) {
 			continue // transient decode error: keep listening, don't crash the session
 		}
 		for _, ev := range events {
-			text := ev.Text
-			ui.RunOnMainThread(func() { a.win.SetText(text) })
-
+			var display string
 			if ev.Kind == stream.Final {
-				dictated = appendSentence(dictated, text)
-				clip := dictated
-				ui.RunOnMainThread(func() { ui.SetClipboard(clip) })
+				a.mu.Lock()
+				a.dictated = appendSentence(a.dictated, ev.Text)
+				display = a.dictated
+				a.mu.Unlock()
+			} else {
+				a.mu.Lock()
+				display = appendSentence(a.dictated, ev.Text)
+				a.mu.Unlock()
 			}
+			text := display
+			ui.RunOnMainThread(func() { a.win.SetText(text) })
 		}
 	}
 }
 
-// appendSentence joins a newly finished sentence onto the dictation
-// accumulated so far, space-separated.
+// appendSentence joins a newly finished (or in-progress) sentence onto the
+// dictation accumulated so far, space-separated.
 func appendSentence(dictated, sentence string) string {
 	if dictated == "" {
 		return sentence

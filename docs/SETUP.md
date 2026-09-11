@@ -281,20 +281,33 @@ font is bundled or required. If you want Inter specifically, install a font
 package that provides it and it'll be picked up automatically, no code
 change needed.
 
-## Output: clipboard, not manual copying
+## Output: one continuously growing display, one clipboard write at close
 
-0type doesn't expect you to select/copy the displayed text yourself. Every
-time an utterance finishes (a `stream.Final` event), that sentence is
-appended to a running accumulator for the current listening session and
-the *whole accumulator* is written to the system clipboard
-(`ui.SetClipboard`, wrapping `gdk_clipboard_set_text` on the default
-display's `GdkClipboard`). Dictate several sentences in one session and
-the clipboard holds all of them, space-joined, ready to paste once you're
-done -- not just the last one. The accumulator resets each time a new
-session starts (on show/toggle-on); see `appendSentence` and `runPipeline`
-in `cmd/0type/app.go`. Verified end to end via the PipeWire loopback
-harness plus `xclip -selection clipboard -o` / `xsel -b` to read back what
-actually landed in the clipboard.
+0type doesn't expect you to select/copy the displayed text yourself, and
+the display isn't meant to reset every time VAD decides one sentence ended
+-- both were wrong in an earlier version, fixed after live feedback:
+
+- **Display:** every event (`Partial` or `Final`) redraws the overlay as
+  *everything finalized so far this session* plus *the sentence currently
+  in progress*, combined into one string (`a.dictated` plus the live
+  partial, in `cmd/0type/app.go`'s `runPipeline`) -- so the on-screen line
+  keeps growing and sliding across the *whole* session, multiple sentences
+  included, rather than snapping back to a blank slate each time one
+  sentence finalizes.
+- **Clipboard:** `ui.SetClipboard` (wrapping `gdk_clipboard_set_text` on
+  the default display's `GdkClipboard`) is called exactly **once**, in
+  `hideAndStop` -- i.e. only when the session actually ends (toggle-off) --
+  with the full `a.dictated` accumulated over the session, not after every
+  sentence. `a.dictated` resets to `""` at the start of each new session
+  (`showAndListen`).
+
+Verified end to end via the PipeWire loopback harness across two sentences
+in one session: display confirmed to keep growing across the sentence
+boundary (captured frames showing the first sentence's tail followed
+immediately by the second sentence's partial, no reset in between),
+clipboard confirmed empty (`xclip -selection clipboard -o` /
+`xsel -b`) for the entire session and populated with both sentences,
+space-joined, only after toggling off.
 
 ## ONNX Runtime API version gotcha
 
