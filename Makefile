@@ -16,6 +16,11 @@ build: toolcheck
 test: toolcheck
 	$(GO) test ./...
 
+# Runs the golden-file ASR integration test too. Needs the real model
+# present locally (`./bin/0type setup`) and takes a few seconds.
+test-integration: toolcheck
+	$(GO) test -tags integration ./...
+
 # Fails loudly if the wrong Go toolchain would be used, instead of silently
 # producing a broken or unexpected build.
 toolcheck:

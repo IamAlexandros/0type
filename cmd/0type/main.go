@@ -28,6 +28,8 @@ func run(args []string) error {
 		return nil
 	case "debug":
 		return runDebug(args[1:])
+	case "setup":
+		return runSetup(args[1:])
 	default:
 		return fmt.Errorf("unknown subcommand %q", args[0])
 	}

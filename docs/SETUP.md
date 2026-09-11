@@ -46,6 +46,37 @@ make test      # go test ./...
 
 ## Model setup
 
-Not yet implemented (Phase 2). Will fetch a Parakeet TDT ONNX export
-(`istupakov/parakeet-tdt-0.6b-v2-onnx` from HuggingFace) into
-`~/.cache/0type/models/`.
+```sh
+./bin/0type setup
+```
+
+Downloads the int8-quantized Parakeet TDT 0.6B v2 model
+(`istupakov/parakeet-tdt-0.6b-v2-onnx` from HuggingFace: encoder ~650MB,
+decoder/joint ~9MB, feature extractor ~140KB) into
+`~/.cache/0type/models/parakeet-tdt-0.6b-v2/`, verifying each file's SHA-256
+against a hardcoded manifest (`internal/modelstore`). Safe to re-run — it
+skips files that are already present and correct.
+
+The full fp32 model is also available upstream (~2.4GB) but isn't used here;
+int8 keeps the download small and runs entirely on CPU.
+
+Try it:
+
+```sh
+./bin/0type debug transcribe testdata/hello.wav
+# -> "The quick brown fox jumps over the lazy dog."
+```
+
+## ONNX Runtime API version gotcha
+
+`go.mod` pins `github.com/yalue/onnxruntime_go` to **v1.17.0**, not latest.
+Newer versions of that module bundle a newer `onnxruntime_c_api.h`
+(`ORT_API_VERSION` 22+), which the system's `onnxruntime-devel` package
+(ORT 1.20.1, API version 20) refuses to satisfy at runtime — it fails with
+"requested API version [22] is not available". v1.13.0–v1.17.0 of the Go
+module all target API version 20, matching ORT 1.20.x. If you upgrade the
+system ONNX Runtime package, the Go module can likely be upgraded to match
+(check `onnxruntime_c_api.h`'s `ORT_API_VERSION` in the module you're
+considering against `pkg-config --modversion onnxruntime` — or, since
+`onnxruntime_go` dlopens the library at runtime, just the `.so`'s own
+version).
