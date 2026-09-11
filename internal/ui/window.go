@@ -81,39 +81,51 @@ typedef struct {
 	gboolean confirmation; // TRUE while showing "Copied" rather than idle/transcript text
 } SlideState;
 
-// idle_font_size/IDLE_TEXT are the "0type" wordmark shown in place of the
-// transcript before any speech has been recognized: static (no pulsing --
-// that read as gimmicky in an earlier version), bigger than the transcript
-// text, and a muted gray closer to the panel's own dark background than
-// to the bright transcript color, so it reads as a quiet watermark rather
-// than competing with real content once it appears.
+// IDLE_TEXT is shown in place of the transcript before any speech has
+// been recognized. The name is a pun on *zero* ("0type" = zero typing),
+// and that only lands if the 0 reads as a digit -- in Cantarell and
+// Montserrat (both tried) the zero is a plain oval, so the whole thing
+// read as "Otype": just a gray word in a pill, however it was weighted or
+// tracked. Adwaita Mono has a dotted zero, so the mark reads correctly,
+// and a monospace face gives it the developer-tool character the rest of
+// the overlay (dark, glowy, Raycast-like) is going for. The "0" is picked
+// out in the same accent the panel's glow uses (see slide_draw_idle), the
+// rest in a muted gray close to the panel background, so it sits quietly
+// until real content replaces it.
 #define IDLE_TEXT "0type"
-static const int idle_font_size_pt = 22;
+#define IDLE_FONT_FAMILY "Adwaita Mono"
+static const int idle_font_size_pt = 17;
 
 static void slide_draw_idle(GtkWidget *area, cairo_t *cr, int width, int height) {
 	PangoLayout *layout = gtk_widget_create_pango_layout(area, IDLE_TEXT);
 	pango_layout_set_single_paragraph_mode(layout, TRUE);
 
-	// Start from the *actual* CSS-resolved font (family, weight -- from
-	// #zt-label in themes/*.css) instead of a bare pango_font_description_
-	// new(), which has no family set at all and falls back to whatever
-	// Pango's own generic default happens to be -- a mismatched font next
-	// to the real transcript text was the main reason this looked wrong.
-	// Only the size is overridden, to make the wordmark bigger.
-	PangoFontDescription *desc = pango_font_description_copy(pango_context_get_font_description(gtk_widget_get_pango_context(area)));
+	PangoFontDescription *desc = pango_font_description_new();
+	pango_font_description_set_family(desc, IDLE_FONT_FAMILY);
 	pango_font_description_set_size(desc, idle_font_size_pt * PANGO_SCALE);
+	pango_font_description_set_weight(desc, PANGO_WEIGHT_NORMAL);
 	pango_layout_set_font_description(layout, desc);
 	pango_font_description_free(desc);
 
+	// Two-tone: the leading "0" in the accent (pango_cairo honors
+	// per-range foreground attributes over the cairo source), the rest in
+	// the muted gray set as the cairo source below.
 	PangoAttrList *attrs = pango_attr_list_new();
-	pango_attr_list_insert(attrs, pango_attr_letter_spacing_new(400));
+	PangoAttribute *zero = pango_attr_foreground_new(0x8C00, 0x9E00, 0xFF00);
+	zero->start_index = 0;
+	zero->end_index = 1;
+	pango_attr_list_insert(attrs, zero);
+	PangoAttribute *zero_alpha = pango_attr_foreground_alpha_new(0xD000);
+	zero_alpha->start_index = 0;
+	zero_alpha->end_index = 1;
+	pango_attr_list_insert(attrs, zero_alpha);
 	pango_layout_set_attributes(layout, attrs);
 	pango_attr_list_unref(attrs);
 
 	int text_w, text_h;
 	pango_layout_get_pixel_size(layout, &text_w, &text_h);
 
-	cairo_set_source_rgba(cr, 0.46, 0.47, 0.52, 0.85);
+	cairo_set_source_rgba(cr, 0.50, 0.52, 0.60, 0.9);
 	cairo_move_to(cr, (width - text_w) / 2.0, (height - text_h) / 2.0);
 	pango_cairo_show_layout(cr, layout);
 
@@ -555,7 +567,7 @@ const (
 	// not just the smaller transcript text -- both are vertically
 	// centered within whatever height this is.
 	viewportWidthPx  = 260
-	viewportHeightPx = 36
+	viewportHeightPx = 30
 	// repositionDelayMs must exceed how long GTK takes to finish its
 	// first real layout pass after being shown; measured at ~well under
 	// 500ms during development, so 150ms leaves comfortable margin

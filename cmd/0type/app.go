@@ -75,6 +75,13 @@ type app struct {
 	visible  bool
 	stop     chan struct{}
 	dictated string // finalized sentences this session, space-joined
+	// generation increments every time a new session starts (showAndListen).
+	// hideAndStop's delayed "hide after the confirmation hold" callback
+	// captures the generation it was scheduled under and checks it's still
+	// current before actually hiding -- otherwise a quick toggle-off then
+	// toggle-back-on within the hold window would have that stale delayed
+	// hide fire later and close the *new* session's window out from under it.
+	generation int
 }
 
 func (a *app) handleToggle() {
@@ -98,6 +105,7 @@ func (a *app) showAndListen() {
 	}
 	a.visible = true
 	a.dictated = ""
+	a.generation++
 	stop := make(chan struct{})
 	a.stop = stop
 	a.mu.Unlock()
@@ -123,6 +131,7 @@ func (a *app) hideAndStop() {
 	stop := a.stop
 	a.stop = nil
 	dictated := a.dictated
+	gen := a.generation
 	a.mu.Unlock()
 
 	if stop != nil {
@@ -137,7 +146,15 @@ func (a *app) hideAndStop() {
 	ui.SetClipboard(dictated) // hideAndStop already runs on the GTK main thread (see handleToggle)
 	a.win.ShowCopiedConfirmation()
 	time.AfterFunc(copiedConfirmationHold, func() {
-		ui.RunOnMainThread(func() { a.win.Hide() })
+		ui.RunOnMainThread(func() {
+			a.mu.Lock()
+			stale := a.generation != gen
+			a.mu.Unlock()
+			if stale {
+				return // a new session started before the hold elapsed -- don't close it out
+			}
+			a.win.Hide()
+		})
 	})
 }
 

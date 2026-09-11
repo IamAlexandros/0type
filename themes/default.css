@@ -1,10 +1,18 @@
-/* 0type default theme: dark, glassy, glowy -- a small floating pill near
+/* 0type default theme: dark, glassy, glowy -- a slim floating pill near
  * the bottom of the screen, Raycast-style.
  *
- * #zt-panel is deliberately inset from the window edge via `margin`: GTK
- * clips box-shadow hard at the window's own boundary, so a glow with
- * nothing between it and that edge gets cut off flat instead of fading
- * out. The margin is that breathing room. (GTK CSS also has no
+ * Palette (keep it to these; the glow, the idle wordmark's accent "0",
+ * and anything else tinted all share the one periwinkle accent):
+ *   background  #101016 @ .94
+ *   hairline    white @ .08         (neutral -- a tinted border read muddy)
+ *   accent      #7A8CFF             (glow, wordmark "0")
+ *   text        #ECEDF5 @ .96
+ *   muted       #80849A             (idle wordmark, set in internal/ui)
+ *   success     #8ADBAE             (the "Copied" confirmation)
+ *
+ * #zt-panel is inset from the window edge via `margin`: GTK clips
+ * box-shadow hard at the window's own boundary, so a glow with nothing
+ * between it and that edge gets cut off flat. (GTK CSS also has no
  * backdrop-blur, so "glassy" here is a translucent dark fill plus a
  * layered glow rather than true blur-behind.) */
 
@@ -14,20 +22,21 @@ window {
 
 #zt-panel {
   margin: 44px;
-  background-color: rgba(17, 17, 24, 0.92);
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  background-color: rgba(16, 16, 22, 0.94);
+  /* A true pill: radius >= half the panel's height (viewport 30px +
+   * padding 2x10px = 50px tall). */
+  border-radius: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow:
-    0 0 0 1px rgba(160, 178, 255, 0.16),
-    0 0 16px rgba(122, 142, 255, 0.38),
-    0 0 36px rgba(104, 122, 255, 0.22),
-    0 6px 18px rgba(0, 0, 0, 0.45);
-  padding: 11px 18px;
+    0 0 18px rgba(122, 140, 255, 0.34),
+    0 0 44px rgba(122, 140, 255, 0.18),
+    0 6px 20px rgba(0, 0, 0, 0.5);
+  padding: 10px 22px;
   min-width: 240px;
 }
 
 #zt-label {
-  color: rgba(240, 241, 250, 0.97);
+  color: rgba(236, 237, 245, 0.96);
   font-family: "Inter", "SF Pro Display", -apple-system, "Segoe UI", Cantarell, "Noto Sans", sans-serif;
   font-size: 14px;
   font-weight: 600;
