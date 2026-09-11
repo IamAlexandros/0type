@@ -283,38 +283,42 @@ change needed.
 
 ## Intro animation and the idle state
 
-Two more things replaced after live feedback ("0type is listening…" as a
-static idle label was "not a good initial view", and `Show()` had no
-animation, just an instant snap into place):
+**A real bug, not just a taste call:** the intro animation "wasn't seen
+properly" because `Show()` set the panel's starting opacity to 0 only
+*inside* the delayed callback (`schedule_show_animation`'s
+`repositionDelayMs` wait), but made the window visible *before* that --
+so for the whole delay the window was fully opaque at whatever position
+it last had, then suddenly jumped to the animation's start state. The user
+saw a flash-then-jump, not a fade. Fixed by setting opacity to 0
+synchronously in `Show()`, before `widget_set_visible`, so the window is
+invisible for the entire wait and the fade is the first thing ever seen.
+Verified by capturing frames at 50ms/200ms/350ms/650ms after toggle-on:
+50ms is fully blank (confirming no premature flash), later frames show the
+fade progressing and then settled -- not an instant snap.
 
-- **Idle state:** with no text set (`ui.New("")`, and `SetText("")` at the
-  start of each session in `showAndListen`), `slide_draw` paints a gently
-  pulsing dot instead of a placeholder label -- radius and opacity both
-  breathe smoothly via a sine wave driven by `pulse_time`, which
-  `slide_tick` advances every frame (the same tick callback already
-  driving the text-slide animation, so this needed no new infrastructure).
-  It's replaced by real sliding text the moment the first `Partial` or
-  `Final` arrives.
-- **Intro animation:** `Show()` now plays a real fade-and-rise-in instead
-  of snapping to full opacity and final position instantly. `gtk_widget_
-  set_opacity` on the panel (GTK's own render-tree alpha -- reliable
-  regardless of X11/compositor-level opacity support) fades 0→1 while the
-  window eases upward into its final resting position from
-  `showAnimRisePx` below it, both driven by one more per-frame
-  `GtkTickCallback` (`show_anim_tick` in `internal/ui/window.go`) using an
-  ease-out cubic over `showAnimDurationS`. It still has to wait the same
-  `repositionDelayMs` for GTK's real size to be known first (same
-  constraint as the original one-shot reposition it replaced), then reads
-  the real final (x, y) once and animates purely from there -- the window
-  is never repositioned mid-animation based on stale/incomplete geometry.
+**Idle state:** the static "0type is listening…" label (and, in an
+earlier version, a pulsing dot -- also didn't land well) is now a bigger,
+bold, muted-gray "0type" wordmark (`slide_draw_idle` in
+`internal/ui/window.go`), static rather than animated, closer in tone to
+the panel's own dark background than to the bright transcript text so it
+reads as a quiet watermark. `viewportHeightPx` was bumped from 22 to 36 to
+give the bigger idle font room without clipping (both idle and transcript
+content are vertically centered within whatever height this is, so
+transcript rendering is unaffected). Shown via `ui.New("")` /
+`SetText("")`; replaced by real sliding text the moment the first
+`Partial` or `Final` arrives.
 
-Verified by sampling the live window's X11 position (`xdotool
-getwindowgeometry`) several times in quick succession right after a
-toggle-on: real intermediate Y values were observed between the rise
-start-offset and the final resting position (not an instant jump), and
-captured frames of the idle dot at different points in time show it
-visibly larger/brighter and smaller/dimmer, confirming the pulse is
-actually animating.
+**Transcript text gradient:** `slide_draw_text` paints the sliding
+transcript with a horizontal Cairo gradient instead of a flat color: muted
+gray for roughly the first sixth of the box, sharpening to the normal
+CSS-resolved text color from there to the right edge. Since older words
+sit toward the left as the line slides (see `slide_retarget`), this reads
+as those words quietly fading into the past rather than being cut off by
+a hard clip edge. Only visible once text has grown past centered (a short,
+centered phrase never reaches the gradient zone) -- confirmed via captured
+frames showing a plain centered phrase with no visible gradient, then the
+same session's growing sentence with a clearly graduated left edge once it
+overflowed.
 
 ## Output: one continuously growing display, one clipboard write at close
 

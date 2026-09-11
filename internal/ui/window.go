@@ -78,41 +78,74 @@ typedef struct {
 	double target_x;
 	gint64 last_time;
 	gboolean started;
-	double pulse_time; // seconds, monotonically increasing; drives the idle pulse animation
 } SlideState;
 
-// slide_draw paints either the sliding transcript text, or -- while there
-// is none yet (idle, waiting for speech) -- a gently pulsing dot in place
-// of a static "listening…" label, using pulse_time (advanced every frame
-// by slide_tick) to drive a smooth breathing size/opacity animation.
-static void slide_draw(GtkDrawingArea *area, cairo_t *cr, int width, int height, gpointer data) {
-	SlideState *s = (SlideState *)data;
+// idle_font_size/IDLE_TEXT are the "0type" wordmark shown in place of the
+// transcript before any speech has been recognized: static (no pulsing --
+// that read as gimmicky in an earlier version), bigger than the transcript
+// text, and a muted gray closer to the panel's own dark background than
+// to the bright transcript color, so it reads as a quiet watermark rather
+// than competing with real content once it appears.
+#define IDLE_TEXT "0type"
+static const int idle_font_size_pt = 22;
 
-	if (s->text == NULL || s->text[0] == '\0') {
-		double pulse = (sin(s->pulse_time * 2.2) + 1.0) / 2.0; // 0..1, gentle breathing rate
-		double radius = 4.5 + pulse * 3.0;
-		double alpha = 0.5 + pulse * 0.45;
+static void slide_draw_idle(GtkWidget *area, cairo_t *cr, int width, int height) {
+	PangoLayout *layout = gtk_widget_create_pango_layout(area, IDLE_TEXT);
+	pango_layout_set_single_paragraph_mode(layout, TRUE);
 
-		cairo_set_source_rgba(cr, 0.60, 0.64, 1.0, alpha);
-		cairo_arc(cr, width / 2.0, height / 2.0, radius, 0, 2 * G_PI);
-		cairo_fill(cr);
-		return;
-	}
+	PangoFontDescription *desc = pango_font_description_new();
+	pango_font_description_set_weight(desc, PANGO_WEIGHT_BOLD);
+	pango_font_description_set_size(desc, idle_font_size_pt * PANGO_SCALE);
+	pango_layout_set_font_description(layout, desc);
+	pango_font_description_free(desc);
 
-	PangoLayout *layout = gtk_widget_create_pango_layout(GTK_WIDGET(area), s->text);
+	int text_w, text_h;
+	pango_layout_get_pixel_size(layout, &text_w, &text_h);
+
+	cairo_set_source_rgba(cr, 0.40, 0.41, 0.45, 0.8);
+	cairo_move_to(cr, (width - text_w) / 2.0, (height - text_h) / 2.0);
+	pango_cairo_show_layout(cr, layout);
+
+	g_object_unref(layout);
+}
+
+// slide_draw_text paints the sliding transcript text with a subtle
+// left-edge fade to gray: a horizontal gradient that's a muted gray for
+// roughly the first sixth of the box, sharpening to the normal (CSS
+// -resolved) text color from there to the right edge. Since older words
+// are the ones sitting toward the left as the line slides (see
+// slide_retarget), this reads as those words quietly fading into the
+// past rather than being cut off by a hard clip edge.
+static void slide_draw_text(GtkWidget *area, cairo_t *cr, int width, int height, SlideState *s) {
+	PangoLayout *layout = gtk_widget_create_pango_layout(area, s->text);
 	pango_layout_set_single_paragraph_mode(layout, TRUE);
 
 	int text_h;
 	pango_layout_get_pixel_size(layout, NULL, &text_h);
 
 	GdkRGBA color;
-	gtk_widget_get_color(GTK_WIDGET(area), &color);
-	gdk_cairo_set_source_rgba(cr, &color);
+	gtk_widget_get_color(area, &color);
+
+	cairo_pattern_t *gradient = cairo_pattern_create_linear(0, 0, width, 0);
+	cairo_pattern_add_color_stop_rgba(gradient, 0.0, 0.50, 0.50, 0.54, color.alpha * 0.55);
+	cairo_pattern_add_color_stop_rgba(gradient, 0.16, color.red, color.green, color.blue, color.alpha);
+	cairo_pattern_add_color_stop_rgba(gradient, 1.0, color.red, color.green, color.blue, color.alpha);
+	cairo_set_source(cr, gradient);
 
 	cairo_move_to(cr, s->current_x, (height - text_h) / 2.0);
 	pango_cairo_show_layout(cr, layout);
 
+	cairo_pattern_destroy(gradient);
 	g_object_unref(layout);
+}
+
+static void slide_draw(GtkDrawingArea *area, cairo_t *cr, int width, int height, gpointer data) {
+	SlideState *s = (SlideState *)data;
+	if (s->text == NULL || s->text[0] == '\0') {
+		slide_draw_idle(GTK_WIDGET(area), cr, width, height);
+	} else {
+		slide_draw_text(GTK_WIDGET(area), cr, width, height, s);
+	}
 }
 
 // slide_tick advances current_x toward target_x by a fraction of the
@@ -135,7 +168,6 @@ static gboolean slide_tick(GtkWidget *widget, GdkFrameClock *clock, gpointer dat
 		}
 	}
 	s->last_time = now;
-	s->pulse_time += dt;
 
 	double diff = s->target_x - s->current_x;
 	if (fabs(diff) < 0.25) {
@@ -207,6 +239,10 @@ static void window_set_child(GtkWidget *window, GtkWidget *child) {
 
 static void widget_set_visible(GtkWidget *widget, gboolean visible) {
 	gtk_widget_set_visible(widget, visible);
+}
+
+static void widget_set_opacity(GtkWidget *widget, double opacity) {
+	gtk_widget_set_opacity(widget, opacity);
 }
 
 static void widget_set_name(GtkWidget *widget, const char *name) {
@@ -401,9 +437,12 @@ const (
 	// widget-space pixels (GtkFixed/measure coordinates), unrelated to the
 	// raw X11 physical-pixel scale-factor issue documented above for
 	// window positioning -- no conversion needed here. Tuned for the
-	// default theme's font size and panel padding/margin.
+	// default theme's font size and panel padding/margin. Height is tall
+	// enough for the bigger idle "0type" wordmark (see slide_draw_idle),
+	// not just the smaller transcript text -- both are vertically
+	// centered within whatever height this is.
 	viewportWidthPx  = 260
-	viewportHeightPx = 22
+	viewportHeightPx = 36
 	// repositionDelayMs must exceed how long GTK takes to finish its
 	// first real layout pass after being shown; measured at ~well under
 	// 500ms during development, so 150ms leaves comfortable margin
@@ -484,6 +523,14 @@ func SetClipboard(text string) {
 // schedule_show_animation). Must be called from the GTK main thread --
 // use RunOnMainThread from any other goroutine.
 func (w *Window) Show() {
+	// Opacity must already be 0 *before* the window becomes visible, not
+	// only later once schedule_show_animation's delayed callback gets
+	// around to it -- otherwise the window flashes in at full opacity
+	// (wherever it was last positioned) for the whole repositionDelayMs
+	// wait, then jumps to the animation's start state. That was the bug
+	// behind the intro "not being seen properly": there was a real,
+	// visible flash-then-jump before any fade/rise ever started.
+	C.widget_set_opacity(w.panel, 0.0)
 	C.widget_set_visible(w.win, C.TRUE)
 	C.schedule_show_animation(w.win, w.panel, C.int(bottomMarginPx), repositionDelayMs, showAnimRisePx, showAnimDurationS)
 }
