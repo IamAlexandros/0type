@@ -281,6 +281,41 @@ font is bundled or required. If you want Inter specifically, install a font
 package that provides it and it'll be picked up automatically, no code
 change needed.
 
+## Intro animation and the idle state
+
+Two more things replaced after live feedback ("0type is listening…" as a
+static idle label was "not a good initial view", and `Show()` had no
+animation, just an instant snap into place):
+
+- **Idle state:** with no text set (`ui.New("")`, and `SetText("")` at the
+  start of each session in `showAndListen`), `slide_draw` paints a gently
+  pulsing dot instead of a placeholder label -- radius and opacity both
+  breathe smoothly via a sine wave driven by `pulse_time`, which
+  `slide_tick` advances every frame (the same tick callback already
+  driving the text-slide animation, so this needed no new infrastructure).
+  It's replaced by real sliding text the moment the first `Partial` or
+  `Final` arrives.
+- **Intro animation:** `Show()` now plays a real fade-and-rise-in instead
+  of snapping to full opacity and final position instantly. `gtk_widget_
+  set_opacity` on the panel (GTK's own render-tree alpha -- reliable
+  regardless of X11/compositor-level opacity support) fades 0→1 while the
+  window eases upward into its final resting position from
+  `showAnimRisePx` below it, both driven by one more per-frame
+  `GtkTickCallback` (`show_anim_tick` in `internal/ui/window.go`) using an
+  ease-out cubic over `showAnimDurationS`. It still has to wait the same
+  `repositionDelayMs` for GTK's real size to be known first (same
+  constraint as the original one-shot reposition it replaced), then reads
+  the real final (x, y) once and animates purely from there -- the window
+  is never repositioned mid-animation based on stale/incomplete geometry.
+
+Verified by sampling the live window's X11 position (`xdotool
+getwindowgeometry`) several times in quick succession right after a
+toggle-on: real intermediate Y values were observed between the rise
+start-offset and the final resting position (not an instant jump), and
+captured frames of the idle dot at different points in time show it
+visibly larger/brighter and smaller/dimmer, confirming the pulse is
+actually animating.
+
 ## Output: one continuously growing display, one clipboard write at close
 
 0type doesn't expect you to select/copy the displayed text yourself, and

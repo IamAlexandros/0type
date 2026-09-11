@@ -78,11 +78,24 @@ typedef struct {
 	double target_x;
 	gint64 last_time;
 	gboolean started;
+	double pulse_time; // seconds, monotonically increasing; drives the idle pulse animation
 } SlideState;
 
+// slide_draw paints either the sliding transcript text, or -- while there
+// is none yet (idle, waiting for speech) -- a gently pulsing dot in place
+// of a static "listening…" label, using pulse_time (advanced every frame
+// by slide_tick) to drive a smooth breathing size/opacity animation.
 static void slide_draw(GtkDrawingArea *area, cairo_t *cr, int width, int height, gpointer data) {
 	SlideState *s = (SlideState *)data;
+
 	if (s->text == NULL || s->text[0] == '\0') {
+		double pulse = (sin(s->pulse_time * 2.2) + 1.0) / 2.0; // 0..1, gentle breathing rate
+		double radius = 4.5 + pulse * 3.0;
+		double alpha = 0.5 + pulse * 0.45;
+
+		cairo_set_source_rgba(cr, 0.60, 0.64, 1.0, alpha);
+		cairo_arc(cr, width / 2.0, height / 2.0, radius, 0, 2 * G_PI);
+		cairo_fill(cr);
 		return;
 	}
 
@@ -122,6 +135,7 @@ static gboolean slide_tick(GtkWidget *widget, GdkFrameClock *clock, gpointer dat
 		}
 	}
 	s->last_time = now;
+	s->pulse_time += dt;
 
 	double diff = s->target_x - s->current_x;
 	if (fabs(diff) < 0.25) {
@@ -240,13 +254,56 @@ static void prepare_overlay(GtkWidget *window, int width) {
 	XChangeWindowAttributes(xdisplay, xid, CWOverrideRedirect, &attrs);
 }
 
+// ShowAnimState drives the intro animation: the panel fades in
+// (gtk_widget_set_opacity, GTK's own render-tree alpha, independent of
+// any X11/compositor-level opacity support) while the window eases
+// upward into its final resting position from rise_px below it, both
+// over duration_s, via a per-frame GtkTickCallback exactly like
+// slide_tick -- see show_anim_tick.
+typedef struct {
+	Display *xdisplay;
+	Window xid;
+	GtkWidget *panel;
+	int final_x, final_y;
+	int rise_px;
+	gint64 start_time;
+	double duration_s;
+} ShowAnimState;
+
+static gboolean show_anim_tick(GtkWidget *widget, GdkFrameClock *clock, gpointer data) {
+	ShowAnimState *s = (ShowAnimState *)data;
+
+	gint64 now = gdk_frame_clock_get_frame_time(clock);
+	double elapsed = (now - s->start_time) / 1000000.0;
+	double t = elapsed / s->duration_s;
+	if (t > 1.0) {
+		t = 1.0;
+	}
+	double eased = 1.0 - pow(1.0 - t, 3.0); // ease-out cubic: fast start, gentle settle
+
+	gtk_widget_set_opacity(s->panel, eased);
+
+	int y = s->final_y + (int)round((1.0 - eased) * s->rise_px);
+	XMoveWindow(s->xdisplay, s->xid, s->final_x, y);
+	XFlush(s->xdisplay); // cheaper than XSync; no need to block for a round trip every frame
+
+	if (t >= 1.0) {
+		free(s);
+		return G_SOURCE_REMOVE;
+	}
+	return G_SOURCE_CONTINUE;
+}
+
 typedef struct {
 	GtkWidget *window;
+	GtkWidget *panel;
 	int bottom_margin;
-} RepositionCtx;
+	int rise_px;
+	double duration_s;
+} ShowAnimCtx;
 
-static gboolean reposition_cb(gpointer data) {
-	RepositionCtx *ctx = (RepositionCtx *)data;
+static gboolean show_anim_start_cb(gpointer data) {
+	ShowAnimCtx *ctx = (ShowAnimCtx *)data;
 
 	GtkNative *native = gtk_widget_get_native(ctx->window);
 	GdkSurface *surface = gtk_native_get_surface(native);
@@ -267,24 +324,41 @@ static gboolean reposition_cb(gpointer data) {
 	if (y < 0) {
 		y = 0;
 	}
-	XMoveWindow(xdisplay, xid, x, y);
+
+	ShowAnimState *s = malloc(sizeof(ShowAnimState));
+	s->xdisplay = xdisplay;
+	s->xid = xid;
+	s->panel = ctx->panel;
+	s->final_x = x;
+	s->final_y = y;
+	s->rise_px = ctx->rise_px;
+	s->start_time = gdk_frame_clock_get_frame_time(gtk_widget_get_frame_clock(ctx->window));
+	s->duration_s = ctx->duration_s;
+
+	gtk_widget_set_opacity(s->panel, 0.0);
+	XMoveWindow(xdisplay, xid, x, y + s->rise_px);
 	XSync(xdisplay, False);
+
+	gtk_widget_add_tick_callback(ctx->window, show_anim_tick, s, NULL);
 
 	free(ctx);
 	return G_SOURCE_REMOVE;
 }
 
-// schedule_reposition centers window horizontally and anchors it
-// bottom_margin pixels above the bottom of the screen, delay_ms after
-// being called -- long enough for GTK to have finished its first real
-// layout pass (see prepare_overlay) so the window's actual raw X11 size is
-// known, avoiding the logical-vs-physical-pixel mismatch a scaled session
-// would otherwise hit if we tried to compute this synchronously.
-static void schedule_reposition(GtkWidget *window, int bottom_margin, guint delay_ms) {
-	RepositionCtx *ctx = malloc(sizeof(RepositionCtx));
+// schedule_show_animation waits delay_ms (long enough for GTK to have
+// finished its first real layout pass -- see prepare_overlay -- so the
+// window's actual raw X11 size is known; needed for the same
+// logical-vs-physical-pixel-scale reason documented there), then starts
+// the fade+rise intro animation into its final centered,
+// bottom_margin-above-the-bottom position.
+static void schedule_show_animation(GtkWidget *window, GtkWidget *panel, int bottom_margin, guint delay_ms, int rise_px, double duration_s) {
+	ShowAnimCtx *ctx = malloc(sizeof(ShowAnimCtx));
 	ctx->window = window;
+	ctx->panel = panel;
 	ctx->bottom_margin = bottom_margin;
-	g_timeout_add(delay_ms, reposition_cb, ctx);
+	ctx->rise_px = rise_px;
+	ctx->duration_s = duration_s;
+	g_timeout_add(delay_ms, show_anim_start_cb, ctx);
 }
 */
 import "C"
@@ -335,6 +409,12 @@ const (
 	// 500ms during development, so 150ms leaves comfortable margin
 	// without being a noticeable visible delay/jump.
 	repositionDelayMs = 150
+	// showAnimRisePx/showAnimDurationS shape the intro animation Show
+	// plays once the window's real size is known (see
+	// schedule_show_animation): it fades in while easing up into its
+	// final resting position from this many pixels below it.
+	showAnimRisePx    = 18
+	showAnimDurationS = 0.32
 )
 
 // Window is 0type's floating overlay: a small panel positioned near the
@@ -342,14 +422,17 @@ const (
 // decoration, no taskbar/alt-tab entry).
 type Window struct {
 	win   *C.GtkWidget
+	panel *C.GtkWidget
 	slide *C.SlideState
 	loop  *C.GMainLoop
 }
 
 // New creates the window and builds its widget tree: a styled panel
 // containing a fixed-size drawing area that the transcript text slides
-// around inside as it comes in (see SetText). It must be called from the
-// same goroutine that will later call Run.
+// around inside as it comes in (see SetText). Pass "" for initialText to
+// start idle (a pulsing dot; see slide_draw) rather than with text
+// already showing. It must be called from the same goroutine that will
+// later call Run.
 func New(initialText string) (*Window, error) {
 	if C.gtk_init_check() == C.FALSE {
 		return nil, fmt.Errorf("ui: gtk_init_check failed (no display? is Xwayland available?)")
@@ -368,7 +451,7 @@ func New(initialText string) (*Window, error) {
 
 	withCString(initialText, func(c *C.char) { C.slide_retarget(slide, viewportWidthPx, c) })
 
-	return &Window{win: win, slide: slide}, nil
+	return &Window{win: win, panel: box, slide: slide}, nil
 }
 
 // LoadCSS applies the stylesheet at path application-wide. Selectors
@@ -396,12 +479,13 @@ func SetClipboard(text string) {
 	withCString(text, func(c *C.char) { C.set_clipboard_text(c) })
 }
 
-// Show makes the window visible and (re-)positions it. Must be called
-// from the GTK main thread -- use RunOnMainThread from any other
-// goroutine.
+// Show makes the window visible and plays its intro animation (fade in
+// while easing up into its final resting position; see
+// schedule_show_animation). Must be called from the GTK main thread --
+// use RunOnMainThread from any other goroutine.
 func (w *Window) Show() {
 	C.widget_set_visible(w.win, C.TRUE)
-	C.schedule_reposition(w.win, C.int(bottomMarginPx), repositionDelayMs)
+	C.schedule_show_animation(w.win, w.panel, C.int(bottomMarginPx), repositionDelayMs, showAnimRisePx, showAnimDurationS)
 }
 
 // Hide makes the window invisible. Must be called from the GTK main

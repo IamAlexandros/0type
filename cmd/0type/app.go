@@ -32,7 +32,7 @@ func runApp(args []string) error {
 	}
 	defer model.Close()
 
-	win, err := ui.New("0type is listening…")
+	win, err := ui.New("") // idle: a pulsing dot until speech arrives, see internal/ui's slide_draw
 	if err != nil {
 		return fmt.Errorf("create window: %w", err)
 	}
@@ -95,7 +95,7 @@ func (a *app) showAndListen() {
 	a.stop = stop
 	a.mu.Unlock()
 
-	a.win.SetText("0type is listening…")
+	a.win.SetText("") // back to idle for the new session
 	a.win.Show()
 	go a.runPipeline(stop)
 }
