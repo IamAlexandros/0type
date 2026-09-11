@@ -32,10 +32,4 @@ window {
   font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.1px;
-  opacity: 1;
-  transition: opacity 320ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-#zt-label.zt-updating {
-  opacity: 0.55;
 }

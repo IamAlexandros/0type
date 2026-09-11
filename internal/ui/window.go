@@ -64,16 +64,20 @@ static void label_set_text(GtkWidget *label, const char *text) {
 	gtk_label_set_text(GTK_LABEL(label), text);
 }
 
-static void label_set_wrap(GtkWidget *label, gboolean wrap) {
-	gtk_label_set_wrap(GTK_LABEL(label), wrap);
-}
-
-// label_set_max_width_chars bounds the label's natural (unwrapped) width
-// request -- without this, a GtkLabel requests enough width to fit its
-// text on one line regardless of gtk_label_set_wrap, which can blow the
-// whole window out far past its intended size.
-static void label_set_max_width_chars(GtkWidget *label, int chars) {
-	gtk_label_set_max_width_chars(GTK_LABEL(label), chars);
+// label_set_growing_line configures the label as a fixed-width single
+// line that ellipsizes at the *start* ("…rest of it") rather than
+// wrapping or resizing. As the transcript grows, already-shown words stay
+// put and new ones appear at the right; once the line is longer than the
+// box, the oldest (leftmost) words are the ones hidden behind the
+// ellipsis -- so the sentence visibly "builds" toward its final form
+// without the box ever changing size or the display jumping around.
+static void label_set_growing_line(GtkWidget *label, int width_chars) {
+	GtkLabel *l = GTK_LABEL(label);
+	gtk_label_set_wrap(l, FALSE);
+	gtk_label_set_single_line_mode(l, TRUE);
+	gtk_label_set_ellipsize(l, PANGO_ELLIPSIZE_START);
+	gtk_label_set_width_chars(l, width_chars);
+	gtk_label_set_xalign(l, 0.0);
 }
 
 static void box_append(GtkWidget *box, GtkWidget *child) {
@@ -90,23 +94,6 @@ static void widget_set_visible(GtkWidget *widget, gboolean visible) {
 
 static void widget_set_name(GtkWidget *widget, const char *name) {
 	gtk_widget_set_name(widget, name);
-}
-
-// mark_label_updating and schedule_clear_updating together produce a brief
-// fade on each text update: the CSS class add is instant (no transition on
-// add), then removing it shortly after triggers #zt-label's CSS
-// `transition: opacity` back up to 1 (see themes/default.css).
-static void mark_label_updating(GtkWidget *label) {
-	gtk_widget_add_css_class(label, "zt-updating");
-}
-
-static gboolean clear_updating_cb(gpointer data) {
-	gtk_widget_remove_css_class((GtkWidget *)data, "zt-updating");
-	return G_SOURCE_REMOVE;
-}
-
-static void schedule_clear_updating(GtkWidget *label, guint delay_ms) {
-	g_timeout_add(delay_ms, clear_updating_cb, label);
 }
 
 static void load_css(const char *path) {
@@ -224,20 +211,18 @@ const (
 	// off flush -- the window is expected to end up wider than this once
 	// that margin is included in its natural size.
 	windowWidth = 400
-	// maxLabelWidthChars bounds the label's natural width so long text
-	// wraps within the panel instead of growing it to fit one line.
-	// Tuned for the default theme's font size and panel padding/margin.
-	maxLabelWidthChars = 28
+	// labelWidthChars fixes the label's visible width (in characters): the
+	// box never grows or wraps as the transcript comes in. See
+	// label_set_growing_line -- text ellipsizes at the *start* once it
+	// outgrows this, so the sentence visibly builds up with its newest
+	// words always in view. Tuned for the default theme's font size and
+	// panel padding/margin.
+	labelWidthChars = 28
 	// repositionDelayMs must exceed how long GTK takes to finish its
 	// first real layout pass after being shown; measured at ~well under
 	// 500ms during development, so 150ms leaves comfortable margin
 	// without being a noticeable visible delay/jump.
 	repositionDelayMs = 150
-	// textFadeDelayMs is how long the label stays dimmed (via the
-	// "zt-updating" CSS class) before fading back to full opacity -- long
-	// enough to register as a visible flash-and-settle, short enough to
-	// not lag behind fast successive updates.
-	textFadeDelayMs = 40
 )
 
 // Window is 0type's floating overlay: a small panel positioned near the
@@ -264,8 +249,7 @@ func New(initialText string) (*Window, error) {
 
 	label := withCStringRet(initialText, func(c *C.char) *C.GtkWidget { return C.new_label(c) })
 	withCString("zt-label", func(c *C.char) { C.widget_set_name(label, c) })
-	C.label_set_wrap(label, C.TRUE)
-	C.label_set_max_width_chars(label, maxLabelWidthChars)
+	C.label_set_growing_line(label, labelWidthChars)
 
 	C.box_append(box, label)
 	C.window_set_child(win, box)
@@ -279,14 +263,14 @@ func (w *Window) LoadCSS(path string) {
 	withCString(path, func(c *C.char) { C.load_css(c) })
 }
 
-// SetText updates the label's text, with a brief dim-then-fade-in
-// animation (see themes/default.css's #zt-label transition and the
-// "zt-updating" class). Must be called from the GTK main thread -- use
-// RunOnMainThread from any other goroutine.
+// SetText updates the label's text. The label is a fixed-width single
+// line that ellipsizes at the start (see label_set_growing_line), so
+// calling this with progressively longer transcript text makes the
+// sentence appear to build up in place, newest words always visible,
+// rather than jumping around or resizing. Must be called from the GTK
+// main thread -- use RunOnMainThread from any other goroutine.
 func (w *Window) SetText(text string) {
-	C.mark_label_updating(w.label)
 	withCString(text, func(c *C.char) { C.label_set_text(w.label, c) })
-	C.schedule_clear_updating(w.label, textFadeDelayMs)
 }
 
 // Show makes the window visible and (re-)positions it. Must be called

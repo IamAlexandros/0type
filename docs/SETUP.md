@@ -207,9 +207,22 @@ fine in `go test` but not in practice.
 ## Theme design notes (bottom-anchored, glow, font)
 
 Positioned at the bottom-center now (`bottomMarginPx` in `internal/ui`),
-smaller than the original Phase 4 version, with a fade-on-update animation
-(toggling a `zt-updating` CSS class briefly dims `#zt-label`, then GTK's own
-`transition: opacity` on that selector eases it back — see `SetText`).
+smaller than the original Phase 4 version.
+
+**How the transcript animates:** an earlier version wrapped the label to
+multiple lines and flashed/dimmed it on every update via a toggled CSS
+class + `transition: opacity`. Both were replaced after live feedback --
+the flash felt bad, and wrapping meant the box kept resizing and jumping as
+text grew. The label is now fixed-width and single-line
+(`label_set_growing_line` in `internal/ui/window.go`: `gtk_label_set_
+single_line_mode` + `gtk_label_set_ellipsize(…, PANGO_ELLIPSIZE_START)` +
+`gtk_label_set_width_chars`, left-aligned). As the transcript grows past
+that fixed width, Pango truncates the *start* of the text with "…", not
+the end -- so already-shown words stay in place, new words appear at the
+right, and once the line overflows you watch the sentence visibly build up
+toward its final form with the newest words always in view, box never
+resizing. No CSS or custom animation code needed for this -- it's a plain
+label property.
 
 One rendering gotcha worth knowing if you touch `themes/*.css`: **GTK clips
 `box-shadow` hard at the window's own edge.** `#zt-panel` used to fill the
