@@ -122,10 +122,15 @@ func (a *app) stopPipeline() {
 }
 
 // runPipeline owns one live-capture session end to end: opening the mic,
-// streaming chunks through a fresh stream.Runner, and posting transcript
-// updates to the window. Mic open/close both happen in this goroutine (see
-// internal/audio.StreamChunks's doc comment) to avoid a close-while-reading
-// race with a handle shared across goroutines.
+// streaming chunks through a fresh stream.Runner, posting transcript
+// updates to the window, and copying finished sentences to the system
+// clipboard as they're recognized -- the display shows each sentence
+// forming live, but the clipboard accumulates every Final of the session
+// (reset each time a new session starts on show), so the user can dictate
+// several sentences and paste the whole thing once they're done, without
+// having to copy anything themselves. Mic open/close both happen in this
+// goroutine (see internal/audio.StreamChunks's doc comment) to avoid a
+// close-while-reading race with a handle shared across goroutines.
 func (a *app) runPipeline(stop chan struct{}) {
 	mic, err := audio.OpenCapture(sampleRate, channels)
 	if err != nil {
@@ -139,6 +144,7 @@ func (a *app) runPipeline(stop chan struct{}) {
 	chunkSamples := sampleRate * channels * chunkMS / 1000
 	chunks := audio.StreamChunks(mic, chunkSamples, stop)
 
+	var dictated string
 	for c := range chunks {
 		if c.Err != nil {
 			text := fmt.Sprintf("mic error: %v", c.Err)
@@ -153,6 +159,21 @@ func (a *app) runPipeline(stop chan struct{}) {
 		for _, ev := range events {
 			text := ev.Text
 			ui.RunOnMainThread(func() { a.win.SetText(text) })
+
+			if ev.Kind == stream.Final {
+				dictated = appendSentence(dictated, text)
+				clip := dictated
+				ui.RunOnMainThread(func() { ui.SetClipboard(clip) })
+			}
 		}
 	}
+}
+
+// appendSentence joins a newly finished sentence onto the dictation
+// accumulated so far, space-separated.
+func appendSentence(dictated, sentence string) string {
+	if dictated == "" {
+		return sentence
+	}
+	return dictated + " " + sentence
 }

@@ -207,6 +207,12 @@ static void load_css(const char *path) {
 	g_object_unref(provider);
 }
 
+static void set_clipboard_text(const char *text) {
+	GdkDisplay *display = gdk_display_get_default();
+	GdkClipboard *clipboard = gdk_display_get_clipboard(display);
+	gdk_clipboard_set_text(clipboard, text);
+}
+
 // prepare_overlay realizes window (creating its underlying X11 surface
 // without mapping/showing it yet) and marks it override-redirect, so the
 // window manager never adopts, decorates, or lists it. It does not
@@ -380,6 +386,14 @@ func (w *Window) LoadCSS(path string) {
 // goroutine.
 func (w *Window) SetText(text string) {
 	withCString(text, func(c *C.char) { C.slide_retarget(w.slide, viewportWidthPx, c) })
+}
+
+// SetClipboard replaces the system clipboard's contents with text, so the
+// user can paste it elsewhere once they're done dictating. Must be called
+// from the GTK main thread -- use RunOnMainThread from any other
+// goroutine.
+func SetClipboard(text string) {
+	withCString(text, func(c *C.char) { C.set_clipboard_text(c) })
 }
 
 // Show makes the window visible and (re-)positions it. Must be called

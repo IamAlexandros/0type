@@ -281,6 +281,21 @@ font is bundled or required. If you want Inter specifically, install a font
 package that provides it and it'll be picked up automatically, no code
 change needed.
 
+## Output: clipboard, not manual copying
+
+0type doesn't expect you to select/copy the displayed text yourself. Every
+time an utterance finishes (a `stream.Final` event), that sentence is
+appended to a running accumulator for the current listening session and
+the *whole accumulator* is written to the system clipboard
+(`ui.SetClipboard`, wrapping `gdk_clipboard_set_text` on the default
+display's `GdkClipboard`). Dictate several sentences in one session and
+the clipboard holds all of them, space-joined, ready to paste once you're
+done -- not just the last one. The accumulator resets each time a new
+session starts (on show/toggle-on); see `appendSentence` and `runPipeline`
+in `cmd/0type/app.go`. Verified end to end via the PipeWire loopback
+harness plus `xclip -selection clipboard -o` / `xsel -b` to read back what
+actually landed in the clipboard.
+
 ## ONNX Runtime API version gotcha
 
 `go.mod` pins `github.com/yalue/onnxruntime_go` to **v1.17.0**, not latest.
