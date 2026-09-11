@@ -209,20 +209,58 @@ fine in `go test` but not in practice.
 Positioned at the bottom-center now (`bottomMarginPx` in `internal/ui`),
 smaller than the original Phase 4 version.
 
-**How the transcript animates:** an earlier version wrapped the label to
-multiple lines and flashed/dimmed it on every update via a toggled CSS
-class + `transition: opacity`. Both were replaced after live feedback --
-the flash felt bad, and wrapping meant the box kept resizing and jumping as
-text grew. The label is now fixed-width and single-line
-(`label_set_growing_line` in `internal/ui/window.go`: `gtk_label_set_
-single_line_mode` + `gtk_label_set_ellipsize(…, PANGO_ELLIPSIZE_START)` +
-`gtk_label_set_width_chars`, left-aligned). As the transcript grows past
-that fixed width, Pango truncates the *start* of the text with "…", not
-the end -- so already-shown words stay in place, new words appear at the
-right, and once the line overflows you watch the sentence visibly build up
-toward its final form with the newest words always in view, box never
-resizing. No CSS or custom animation code needed for this -- it's a plain
-label property.
+**How the transcript animates.** The final design: text starts centered: as
+more words come in it smoothly slides left, oldest words sliding off the
+left edge first, newest words always visible on the right, and the panel
+itself never resizes or jumps. Two earlier versions were tried and replaced
+after live feedback:
+
+1. A wrapping label that flashed/dimmed via a toggled CSS class +
+   `transition: opacity` on every update. Felt bad, and wrapping meant the
+   box kept resizing as text grew.
+2. A fixed-width single-line label using `PANGO_ELLIPSIZE_START` (Pango
+   truncates the text's *start*, not end). No flash, no resize -- but only
+   ever an instant jump-cut to the new truncation, not the requested
+   smooth sliding motion.
+
+The real animation needs actual per-frame motion, which meant a genuine
+animation loop, not a CSS/Pango property. That surfaced a GTK sizing trap
+**twice** before landing on something that actually works, worth knowing if
+you touch this code:
+
+- First attempt: `GtkFixed` sized via `gtk_widget_set_size_request`, with
+  the label positioned inside via `gtk_fixed_move` each frame. Looked
+  right in isolation, but `GtkFixed`'s own measure() unions its children's
+  *full* extent into its reported natural size regardless of
+  `size_request` -- same "request is a floor, not a ceiling" trap hit
+  elsewhere in this file (window sizing, label max-width-chars) -- so a
+  long sentence grew the whole panel to fit it.
+- Second attempt: wrapped that `GtkFixed` in a `GtkScrolledWindow` with
+  `propagate-natural-width/height` off and scrollbars disabled
+  (`GTK_POLICY_NEVER`), reasoning that a scrolled window is specifically
+  built to decouple its own size from its child's. That assumption turned
+  out to only be partially true in practice -- some sizing still leaked
+  through (traced to the label's own *minimum* width, which for a
+  non-ellipsizing label equals its full natural width) -- and forcing the
+  label ellipsizable to shrink that minimum fixed the leak but broke the
+  animation itself (the label then actually got allocated a *small* size
+  and rendered a real Pango "…" instead of being positioned/clipped by us).
+
+**What actually works:** skip GTK's container/child size negotiation
+entirely. `internal/ui/window.go`'s `SlideState` is a `GtkDrawingArea`
+sized only via `gtk_drawing_area_set_content_width/height` -- fixed,
+always, because it has no children for anything to leak from -- with the
+text painted directly via Cairo/Pango in a draw function
+(`gtk_widget_create_pango_layout` for CSS-correct font, `gtk_widget_get_
+color` for CSS-correct color) at an x offset that a per-frame
+`GtkTickCallback` (`slide_tick`) eases toward a target (`slide_retarget`,
+called from `SetText`) using frame-clock-timed exponential smoothing --
+genuinely smooth, not an instant snap, and automatically continuous even
+if the target changes again before a previous move finishes. Centered
+while the text fits; once it doesn't, the target pins the text's right
+edge to the viewport's right edge, so growth reads as the sentence sliding
+left. The drawing area's own bounds are the only clip -- no ellipsis, no
+container tricks, nothing to leak.
 
 One rendering gotcha worth knowing if you touch `themes/*.css`: **GTK clips
 `box-shadow` hard at the window's own edge.** `#zt-panel` used to fill the

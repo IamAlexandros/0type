@@ -18,12 +18,15 @@ package ui
 
 /*
 #cgo pkg-config: gtk4 x11
+#cgo LDFLAGS: -lm
 #include <gtk/gtk.h>
 #include <gdk/x11/gdkx.h>
 #include <X11/Xlib.h>
 #include <glib-unix.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <math.h>
+#include <pango/pangocairo.h>
 
 // goSourceTrampoline is exported below; source_trampoline_c adapts it to
 // GLib's GSourceFunc signature, passing the cgo.Handle value through as a
@@ -56,28 +59,128 @@ static GtkWidget *new_box_vertical(void) {
 	return gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
 }
 
-static GtkWidget *new_label(const char *text) {
-	return gtk_label_new(text);
+// SlideState is the transcript display. It's a GtkDrawingArea, not a
+// GtkLabel -- deliberately: every attempt to get a fixed-size *container*
+// (GtkFixed, then GtkScrolledWindow) to hold a growing label without its
+// own reported size leaking the label's length up into the rest of the
+// panel ran into some variant of the same trap (a child's minimum/natural
+// size bubbling through regardless of size_request or propagate-natural
+// settings). A GtkDrawingArea sidesteps the whole problem: its size is
+// simply whatever gtk_drawing_area_set_content_width/height says, always,
+// because it has no children for anything to leak from -- text is painted
+// directly with Cairo/Pango in slide_draw, at whatever x offset
+// slide_tick's animation currently computes. Text is never wrapped or
+// ellipsized; the drawing area's own bounds are what hide the overflow.
+typedef struct {
+	GtkWidget *area;
+	char *text;
+	double current_x;
+	double target_x;
+	gint64 last_time;
+	gboolean started;
+} SlideState;
+
+static void slide_draw(GtkDrawingArea *area, cairo_t *cr, int width, int height, gpointer data) {
+	SlideState *s = (SlideState *)data;
+	if (s->text == NULL || s->text[0] == '\0') {
+		return;
+	}
+
+	PangoLayout *layout = gtk_widget_create_pango_layout(GTK_WIDGET(area), s->text);
+	pango_layout_set_single_paragraph_mode(layout, TRUE);
+
+	int text_h;
+	pango_layout_get_pixel_size(layout, NULL, &text_h);
+
+	GdkRGBA color;
+	gtk_widget_get_color(GTK_WIDGET(area), &color);
+	gdk_cairo_set_source_rgba(cr, &color);
+
+	cairo_move_to(cr, s->current_x, (height - text_h) / 2.0);
+	pango_cairo_show_layout(cr, layout);
+
+	g_object_unref(layout);
 }
 
-static void label_set_text(GtkWidget *label, const char *text) {
-	gtk_label_set_text(GTK_LABEL(label), text);
+// slide_tick advances current_x toward target_x by a fraction of the
+// remaining distance each frame, scaled by actual elapsed time (not an
+// assumed frame rate) via a simple exponential ease -- this is what makes
+// the motion genuinely smooth (frame-clock synced, not an instant snap)
+// and automatically continuous even if target_x changes again before the
+// previous move finishes (see slide_retarget).
+static gboolean slide_tick(GtkWidget *widget, GdkFrameClock *clock, gpointer data) {
+	SlideState *s = (SlideState *)data;
+
+	gint64 now = gdk_frame_clock_get_frame_time(clock);
+	double dt = 1.0 / 60.0;
+	if (s->last_time != 0) {
+		dt = (now - s->last_time) / 1000000.0;
+		if (dt <= 0) {
+			dt = 1.0 / 60.0;
+		} else if (dt > 0.1) {
+			dt = 0.1; // clamp a long gap (e.g. window was hidden) to avoid a visible jump
+		}
+	}
+	s->last_time = now;
+
+	double diff = s->target_x - s->current_x;
+	if (fabs(diff) < 0.25) {
+		s->current_x = s->target_x;
+	} else {
+		const double tau = 0.11; // seconds; smaller = snappier, larger = lazier
+		double factor = 1.0 - exp(-dt / tau);
+		s->current_x += diff * factor;
+	}
+	gtk_widget_queue_draw(s->area);
+	return G_SOURCE_CONTINUE;
 }
 
-// label_set_growing_line configures the label as a fixed-width single
-// line that ellipsizes at the *start* ("…rest of it") rather than
-// wrapping or resizing. As the transcript grows, already-shown words stay
-// put and new ones appear at the right; once the line is longer than the
-// box, the oldest (leftmost) words are the ones hidden behind the
-// ellipsis -- so the sentence visibly "builds" toward its final form
-// without the box ever changing size or the display jumping around.
-static void label_set_growing_line(GtkWidget *label, int width_chars) {
-	GtkLabel *l = GTK_LABEL(label);
-	gtk_label_set_wrap(l, FALSE);
-	gtk_label_set_single_line_mode(l, TRUE);
-	gtk_label_set_ellipsize(l, PANGO_ELLIPSIZE_START);
-	gtk_label_set_width_chars(l, width_chars);
-	gtk_label_set_xalign(l, 0.0);
+// new_slide_area creates the fixed-size transcript display and its
+// animation state together, and starts the per-frame tick callback that
+// drives it for the window's lifetime.
+static SlideState *new_slide_area(int width, int height) {
+	GtkWidget *area = gtk_drawing_area_new();
+	gtk_drawing_area_set_content_width(GTK_DRAWING_AREA(area), width);
+	gtk_drawing_area_set_content_height(GTK_DRAWING_AREA(area), height);
+
+	SlideState *s = calloc(1, sizeof(SlideState));
+	s->area = area;
+	gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(area), slide_draw, s, NULL);
+	gtk_widget_add_tick_callback(area, slide_tick, s, NULL);
+	return s;
+}
+
+// slide_retarget sets the text to display and recomputes where it should
+// sit: centered while it fits within viewport_width, otherwise
+// right-aligned so the newest (rightmost) text stays in view and older
+// text slides off the left edge, clipped by the drawing area's own
+// bounds. The very first call snaps instead of animating in, so the
+// initial text doesn't slide in from nowhere.
+static void slide_retarget(SlideState *s, int viewport_width, const char *text) {
+	g_free(s->text);
+	s->text = g_strdup(text);
+
+	int text_w = 0;
+	if (text[0] != '\0') {
+		PangoLayout *layout = gtk_widget_create_pango_layout(s->area, text);
+		pango_layout_set_single_paragraph_mode(layout, TRUE);
+		pango_layout_get_pixel_size(layout, &text_w, NULL);
+		g_object_unref(layout);
+	}
+
+	double target;
+	if (text_w <= viewport_width) {
+		target = (viewport_width - text_w) / 2.0;
+	} else {
+		target = (double)(viewport_width - text_w);
+	}
+	s->target_x = target;
+
+	if (!s->started) {
+		s->started = TRUE;
+		s->current_x = target;
+	}
+	gtk_widget_queue_draw(s->area);
 }
 
 static void box_append(GtkWidget *box, GtkWidget *child) {
@@ -211,13 +314,16 @@ const (
 	// off flush -- the window is expected to end up wider than this once
 	// that margin is included in its natural size.
 	windowWidth = 400
-	// labelWidthChars fixes the label's visible width (in characters): the
-	// box never grows or wraps as the transcript comes in. See
-	// label_set_growing_line -- text ellipsizes at the *start* once it
-	// outgrows this, so the sentence visibly builds up with its newest
-	// words always in view. Tuned for the default theme's font size and
-	// panel padding/margin.
-	labelWidthChars = 28
+	// viewportWidthPx/viewportHeightPx size the clipping viewport the
+	// transcript label slides around inside (see new_viewport /
+	// slide_retarget): fixed regardless of text length, so the panel
+	// itself never resizes as the transcript grows. These are logical
+	// widget-space pixels (GtkFixed/measure coordinates), unrelated to the
+	// raw X11 physical-pixel scale-factor issue documented above for
+	// window positioning -- no conversion needed here. Tuned for the
+	// default theme's font size and panel padding/margin.
+	viewportWidthPx  = 260
+	viewportHeightPx = 22
 	// repositionDelayMs must exceed how long GTK takes to finish its
 	// first real layout pass after being shown; measured at ~well under
 	// 500ms during development, so 150ms leaves comfortable margin
@@ -230,13 +336,14 @@ const (
 // decoration, no taskbar/alt-tab entry).
 type Window struct {
 	win   *C.GtkWidget
-	label *C.GtkWidget
+	slide *C.SlideState
 	loop  *C.GMainLoop
 }
 
-// New creates the window and builds its widget tree (a styled panel
-// containing a text label). It must be called from the same goroutine
-// that will later call Run.
+// New creates the window and builds its widget tree: a styled panel
+// containing a fixed-size drawing area that the transcript text slides
+// around inside as it comes in (see SetText). It must be called from the
+// same goroutine that will later call Run.
 func New(initialText string) (*Window, error) {
 	if C.gtk_init_check() == C.FALSE {
 		return nil, fmt.Errorf("ui: gtk_init_check failed (no display? is Xwayland available?)")
@@ -247,14 +354,15 @@ func New(initialText string) (*Window, error) {
 	box := C.new_box_vertical()
 	withCString("zt-panel", func(c *C.char) { C.widget_set_name(box, c) })
 
-	label := withCStringRet(initialText, func(c *C.char) *C.GtkWidget { return C.new_label(c) })
-	withCString("zt-label", func(c *C.char) { C.widget_set_name(label, c) })
-	C.label_set_growing_line(label, labelWidthChars)
+	slide := C.new_slide_area(viewportWidthPx, viewportHeightPx)
+	withCString("zt-label", func(c *C.char) { C.widget_set_name(slide.area, c) })
 
-	C.box_append(box, label)
+	C.box_append(box, slide.area)
 	C.window_set_child(win, box)
 
-	return &Window{win: win, label: label}, nil
+	withCString(initialText, func(c *C.char) { C.slide_retarget(slide, viewportWidthPx, c) })
+
+	return &Window{win: win, slide: slide}, nil
 }
 
 // LoadCSS applies the stylesheet at path application-wide. Selectors
@@ -263,14 +371,15 @@ func (w *Window) LoadCSS(path string) {
 	withCString(path, func(c *C.char) { C.load_css(c) })
 }
 
-// SetText updates the label's text. The label is a fixed-width single
-// line that ellipsizes at the start (see label_set_growing_line), so
-// calling this with progressively longer transcript text makes the
-// sentence appear to build up in place, newest words always visible,
-// rather than jumping around or resizing. Must be called from the GTK
-// main thread -- use RunOnMainThread from any other goroutine.
+// SetText updates the transcript text and smoothly slides it into its new
+// position: centered while it fits the display, otherwise sliding left so
+// the newest words stay visible and older ones scroll off the left edge
+// -- the sentence visibly builds up toward its final form, and the panel
+// never resizes or jumps (see slide_tick/slide_retarget). Must be called
+// from the GTK main thread -- use RunOnMainThread from any other
+// goroutine.
 func (w *Window) SetText(text string) {
-	withCString(text, func(c *C.char) { C.label_set_text(w.label, c) })
+	withCString(text, func(c *C.char) { C.slide_retarget(w.slide, viewportWidthPx, c) })
 }
 
 // Show makes the window visible and (re-)positions it. Must be called
