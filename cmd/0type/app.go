@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/zalkanorr/0type/internal/asr"
 	"github.com/zalkanorr/0type/internal/audio"
@@ -11,6 +12,12 @@ import (
 	"github.com/zalkanorr/0type/internal/toggle"
 	"github.com/zalkanorr/0type/internal/ui"
 )
+
+// copiedConfirmationHold is how long the "✓ Copied to clipboard" message
+// stays up before the window plays its closing (fade+drop) animation --
+// long enough to actually read, short enough not to feel like it's
+// lingering.
+const copiedConfirmationHold = 850 * time.Millisecond
 
 // runApp is 0type's normal, no-subcommand entry point: it loads the model
 // once, shows the floating overlay (initially hidden), and toggles
@@ -100,10 +107,12 @@ func (a *app) showAndListen() {
 	go a.runPipeline(stop)
 }
 
-// hideAndStop ends the session: stops capture, hides the window, and only
-// then copies whatever was dictated to the clipboard -- once, not after
-// every sentence -- so the user gets one clean paste of the whole session
-// after they signal they're done.
+// hideAndStop ends the session: stops capture immediately, then copies
+// whatever was dictated to the clipboard once (not after every sentence)
+// and shows a brief confirmation before the window actually closes -- so
+// the user gets clear feedback that their dictation made it to the
+// clipboard, not just a window disappearing. If nothing was dictated,
+// the window just plays its closing animation right away.
 func (a *app) hideAndStop() {
 	a.mu.Lock()
 	if !a.visible {
@@ -116,13 +125,20 @@ func (a *app) hideAndStop() {
 	dictated := a.dictated
 	a.mu.Unlock()
 
-	a.win.Hide()
 	if stop != nil {
 		close(stop)
 	}
-	if dictated != "" {
-		ui.SetClipboard(dictated) // hideAndStop already runs on the GTK main thread (see handleToggle)
+
+	if dictated == "" {
+		a.win.Hide()
+		return
 	}
+
+	ui.SetClipboard(dictated) // hideAndStop already runs on the GTK main thread (see handleToggle)
+	a.win.ShowCopiedConfirmation()
+	time.AfterFunc(copiedConfirmationHold, func() {
+		ui.RunOnMainThread(func() { a.win.Hide() })
+	})
 }
 
 // stopPipeline is called once on shutdown, after the GTK main loop

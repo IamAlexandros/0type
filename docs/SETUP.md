@@ -348,6 +348,46 @@ clipboard confirmed empty (`xclip -selection clipboard -o` /
 `xsel -b`) for the entire session and populated with both sentences,
 space-joined, only after toggling off.
 
+## Idle wordmark font fix, and the outro animation
+
+**Idle wordmark was using the wrong font.** `slide_draw_idle` originally
+built its `PangoFontDescription` via `pango_font_description_new()`, which
+starts with *no family set at all* -- Pango falls back to its own generic
+default rather than the CSS-resolved family (`"Inter"`/Cantarell/etc) used
+everywhere else, so the bigger "0type" wordmark looked visibly
+inconsistent with the rest of the UI. Fixed by copying the widget's actual
+resolved font first (`pango_font_description_copy(pango_context_get_font_
+description(gtk_widget_get_pango_context(area)))`) and overriding only the
+size on that copy, plus a touch of letter-spacing for a more deliberate
+wordmark feel. Verified visually against a silent loopback session (no
+real speech to contaminate the idle state) -- font now matches the
+transcript text's family and weight, just bigger.
+
+**Outro animation:** closing used to just vanish the window instantly.
+Now, in `hideAndStop` (`cmd/0type/app.go`): capture stops immediately
+either way, but if there's nothing to copy the window just plays its
+closing animation (`Window.Hide`, now the mirror of the intro -- fade out
+while easing *down* by `showAnimRisePx`, via `hide_anim_tick` /
+`start_hide_animation` in `internal/ui/window.go`) right away; if there
+*is* something to copy, the clipboard is written, the display switches to
+a solid "✓ Copied to clipboard" in soft accent green
+(`ShowCopiedConfirmation` / `slide_draw_confirmation` -- no gradient, this
+isn't sliding, it's a short-lived status message), held for
+`copiedConfirmationHold` (850ms, via `time.AfterFunc`) so it's actually
+readable, and only then does the same closing animation play.
+
+Debugging note: an early attempt at verifying this over the PipeWire
+loopback harness produced confusing, seemingly-wrong toggle sequences in
+the app's own logs -- traced to leftover *backgrounded shell test
+commands* from earlier iterations still pending and firing once a freshly
+relaunched process became available (stale test-harness processes, not
+stale application state). Re-run cleanly (every command foregrounded, no
+`&`, explicit `pkill` between iterations) the sequence was exactly as
+designed: `hideAndStop` logged the correct accumulated text, confirmation
+shown, hold elapsed, hide triggered, and the window was confirmed
+genuinely unmapped afterward (absent from
+`xdotool search --onlyvisible`, not just visually faded).
+
 ## ONNX Runtime API version gotcha
 
 `go.mod` pins `github.com/yalue/onnxruntime_go` to **v1.17.0**, not latest.

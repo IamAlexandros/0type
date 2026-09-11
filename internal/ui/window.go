@@ -78,6 +78,7 @@ typedef struct {
 	double target_x;
 	gint64 last_time;
 	gboolean started;
+	gboolean confirmation; // TRUE while showing "Copied" rather than idle/transcript text
 } SlideState;
 
 // idle_font_size/IDLE_TEXT are the "0type" wordmark shown in place of the
@@ -93,16 +94,26 @@ static void slide_draw_idle(GtkWidget *area, cairo_t *cr, int width, int height)
 	PangoLayout *layout = gtk_widget_create_pango_layout(area, IDLE_TEXT);
 	pango_layout_set_single_paragraph_mode(layout, TRUE);
 
-	PangoFontDescription *desc = pango_font_description_new();
-	pango_font_description_set_weight(desc, PANGO_WEIGHT_BOLD);
+	// Start from the *actual* CSS-resolved font (family, weight -- from
+	// #zt-label in themes/*.css) instead of a bare pango_font_description_
+	// new(), which has no family set at all and falls back to whatever
+	// Pango's own generic default happens to be -- a mismatched font next
+	// to the real transcript text was the main reason this looked wrong.
+	// Only the size is overridden, to make the wordmark bigger.
+	PangoFontDescription *desc = pango_font_description_copy(pango_context_get_font_description(gtk_widget_get_pango_context(area)));
 	pango_font_description_set_size(desc, idle_font_size_pt * PANGO_SCALE);
 	pango_layout_set_font_description(layout, desc);
 	pango_font_description_free(desc);
 
+	PangoAttrList *attrs = pango_attr_list_new();
+	pango_attr_list_insert(attrs, pango_attr_letter_spacing_new(400));
+	pango_layout_set_attributes(layout, attrs);
+	pango_attr_list_unref(attrs);
+
 	int text_w, text_h;
 	pango_layout_get_pixel_size(layout, &text_w, &text_h);
 
-	cairo_set_source_rgba(cr, 0.40, 0.41, 0.45, 0.8);
+	cairo_set_source_rgba(cr, 0.46, 0.47, 0.52, 0.85);
 	cairo_move_to(cr, (width - text_w) / 2.0, (height - text_h) / 2.0);
 	pango_cairo_show_layout(cr, layout);
 
@@ -139,9 +150,31 @@ static void slide_draw_text(GtkWidget *area, cairo_t *cr, int width, int height,
 	g_object_unref(layout);
 }
 
+// slide_draw_confirmation paints the brief "copied to clipboard"
+// confirmation shown once a session with something to copy ends (see
+// slide_show_confirmation / Window.ShowCopiedConfirmation): centered,
+// solid (no gradient -- this isn't sliding, it's a short-lived status
+// message), in a soft accent green rather than the transcript's neutral
+// color, so it visibly reads as "success" against the dark panel.
+static void slide_draw_confirmation(GtkWidget *area, cairo_t *cr, int width, int height, const char *text) {
+	PangoLayout *layout = gtk_widget_create_pango_layout(area, text);
+	pango_layout_set_single_paragraph_mode(layout, TRUE);
+
+	int text_w, text_h;
+	pango_layout_get_pixel_size(layout, &text_w, &text_h);
+
+	cairo_set_source_rgba(cr, 0.55, 0.86, 0.68, 0.95);
+	cairo_move_to(cr, (width - text_w) / 2.0, (height - text_h) / 2.0);
+	pango_cairo_show_layout(cr, layout);
+
+	g_object_unref(layout);
+}
+
 static void slide_draw(GtkDrawingArea *area, cairo_t *cr, int width, int height, gpointer data) {
 	SlideState *s = (SlideState *)data;
-	if (s->text == NULL || s->text[0] == '\0') {
+	if (s->confirmation && s->text != NULL) {
+		slide_draw_confirmation(GTK_WIDGET(area), cr, width, height, s->text);
+	} else if (s->text == NULL || s->text[0] == '\0') {
 		slide_draw_idle(GTK_WIDGET(area), cr, width, height);
 	} else {
 		slide_draw_text(GTK_WIDGET(area), cr, width, height, s);
@@ -203,6 +236,7 @@ static SlideState *new_slide_area(int width, int height) {
 // bounds. The very first call snaps instead of animating in, so the
 // initial text doesn't slide in from nowhere.
 static void slide_retarget(SlideState *s, int viewport_width, const char *text) {
+	s->confirmation = FALSE;
 	g_free(s->text);
 	s->text = g_strdup(text);
 
@@ -226,6 +260,17 @@ static void slide_retarget(SlideState *s, int viewport_width, const char *text) 
 		s->started = TRUE;
 		s->current_x = target;
 	}
+	gtk_widget_queue_draw(s->area);
+}
+
+// slide_show_confirmation switches the display to the "copied" state
+// (see slide_draw_confirmation). Cleared the next time slide_retarget is
+// called -- Show() always calls it with "" first, so a fresh session
+// never starts still showing a stale confirmation from the last one.
+static void slide_show_confirmation(SlideState *s, const char *text) {
+	g_free(s->text);
+	s->text = g_strdup(text);
+	s->confirmation = TRUE;
 	gtk_widget_queue_draw(s->area);
 }
 
@@ -396,6 +441,74 @@ static void schedule_show_animation(GtkWidget *window, GtkWidget *panel, int bot
 	ctx->duration_s = duration_s;
 	g_timeout_add(delay_ms, show_anim_start_cb, ctx);
 }
+
+// HideAnimState drives the outro animation: the mirror image of
+// ShowAnimState, fading the panel out while easing the window *down* by
+// drop_px from wherever it currently sits, then actually hiding the
+// window once done (see hide_anim_tick) -- so closing never just
+// vanishes the window instantly either.
+typedef struct {
+	Display *xdisplay;
+	Window xid;
+	GtkWidget *window;
+	GtkWidget *panel;
+	int start_x, start_y;
+	int drop_px;
+	gint64 start_time;
+	double duration_s;
+} HideAnimState;
+
+static gboolean hide_anim_tick(GtkWidget *widget, GdkFrameClock *clock, gpointer data) {
+	HideAnimState *s = (HideAnimState *)data;
+
+	gint64 now = gdk_frame_clock_get_frame_time(clock);
+	double elapsed = (now - s->start_time) / 1000000.0;
+	double t = elapsed / s->duration_s;
+	if (t > 1.0) {
+		t = 1.0;
+	}
+	double eased = pow(t, 2.0); // ease-in: gentle start, gathers pace -- reads as "dismissing"
+
+	gtk_widget_set_opacity(s->panel, 1.0 - eased);
+
+	int y = s->start_y + (int)round(eased * s->drop_px);
+	XMoveWindow(s->xdisplay, s->xid, s->start_x, y);
+	XFlush(s->xdisplay);
+
+	if (t >= 1.0) {
+		gtk_widget_set_visible(s->window, FALSE);
+		free(s);
+		return G_SOURCE_REMOVE;
+	}
+	return G_SOURCE_CONTINUE;
+}
+
+// start_hide_animation reads the window's actual current position (it
+// only ever sits at its settled resting spot while visible, so no delayed
+// "wait for real geometry" step is needed here, unlike the show side) and
+// starts the fade+drop outro from there.
+static void start_hide_animation(GtkWidget *window, GtkWidget *panel, int drop_px, double duration_s) {
+	GtkNative *native = gtk_widget_get_native(window);
+	GdkSurface *surface = gtk_native_get_surface(native);
+	Window xid = gdk_x11_surface_get_xid(surface);
+	Display *xdisplay = GDK_SURFACE_XDISPLAY(surface);
+
+	XWindowAttributes real;
+	XGetWindowAttributes(xdisplay, xid, &real);
+
+	HideAnimState *s = malloc(sizeof(HideAnimState));
+	s->xdisplay = xdisplay;
+	s->xid = xid;
+	s->window = window;
+	s->panel = panel;
+	s->start_x = real.x;
+	s->start_y = real.y;
+	s->drop_px = drop_px;
+	s->start_time = gdk_frame_clock_get_frame_time(gtk_widget_get_frame_clock(window));
+	s->duration_s = duration_s;
+
+	gtk_widget_add_tick_callback(window, hide_anim_tick, s, NULL);
+}
 */
 import "C"
 
@@ -518,6 +631,16 @@ func SetClipboard(text string) {
 	withCString(text, func(c *C.char) { C.set_clipboard_text(c) })
 }
 
+// ShowCopiedConfirmation replaces the display with a brief "copied"
+// status message (solid accent green, centered) in place of the
+// transcript, until the next SetText call (Show always makes one, with
+// "", so a fresh session never starts still showing a stale
+// confirmation). Must be called from the GTK main thread -- use
+// RunOnMainThread from any other goroutine.
+func (w *Window) ShowCopiedConfirmation() {
+	withCString("✓ Copied to clipboard", func(c *C.char) { C.slide_show_confirmation(w.slide, c) })
+}
+
 // Show makes the window visible and plays its intro animation (fade in
 // while easing up into its final resting position; see
 // schedule_show_animation). Must be called from the GTK main thread --
@@ -535,10 +658,12 @@ func (w *Window) Show() {
 	C.schedule_show_animation(w.win, w.panel, C.int(bottomMarginPx), repositionDelayMs, showAnimRisePx, showAnimDurationS)
 }
 
-// Hide makes the window invisible. Must be called from the GTK main
-// thread -- use RunOnMainThread from any other goroutine.
+// Hide plays the outro animation (fade out while easing down by
+// showAnimRisePx -- the mirror of Show's intro) and makes the window
+// invisible once it completes. Must be called from the GTK main thread --
+// use RunOnMainThread from any other goroutine.
 func (w *Window) Hide() {
-	C.widget_set_visible(w.win, C.FALSE)
+	C.start_hide_animation(w.win, w.panel, showAnimRisePx, showAnimDurationS)
 }
 
 // RunOnMainThread schedules fn to run on the GTK main loop thread as soon
