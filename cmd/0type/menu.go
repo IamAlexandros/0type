@@ -52,9 +52,10 @@ const menuIdleTimeout = 20 * time.Second
 // Anything already on screen (a dictation session) is ended first: the
 // menu and the bar are the same panel and can't both be showing.
 func (a *app) openMenu() {
-	if a.menu.open {
-		return
-	}
+	// Deliberately not "if already open, do nothing": asking for the menu
+	// re-renders and re-shows it unconditionally, so if the app's idea of
+	// what's on screen ever drifts from what actually is, running `0type`
+	// again fixes it instead of silently doing nothing forever.
 	if a.isVisible() {
 		a.hideAndStop()
 	}

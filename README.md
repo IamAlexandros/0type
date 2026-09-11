@@ -108,9 +108,21 @@ the tarball (or `internal/theme/themes/` in the source) to
 
 Besides the panel itself, a theme sets the colors the overlay draws with —
 `#zt-accent`, `#zt-muted`, `#zt-success`, `#zt-meter`, `#zt-tile` — and
-may set three things CSS can't express, via comment directives:
-`0type-mark: mic|pixel|zero`, `0type-idle: READY`, and
-`0type-copied: SAVED!`.
+may set four things CSS can't express, via comment directives:
+`0type-mark: mic|pixel|zero`, `0type-idle: READY`, `0type-copied: SAVED!`,
+and its own sprite — up to 16×16, drawn in the comment itself:
+
+```css
+/* 0type-art:
+ * ..#####..
+ * .#.###.#.
+ * .#######.
+ * ..#...#..
+ */
+```
+
+That's how the Tamagotchi gets a creature instead of a microphone, the
+Xbox its jewel, Winamp its bolt, and DOS its prompt.
 
 Five fonts are embedded in the binary and registered for 0type alone
 (nothing is installed into your system): Press Start 2P, Silkscreen,

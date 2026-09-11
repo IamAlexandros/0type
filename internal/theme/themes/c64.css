@@ -4,6 +4,15 @@
  * 0type-idle: READY.
  * 0type-copied: SAVED.
  *
+ * The block cursor that sat blinking under READY.
+ * 0type-art:
+ * ######
+ * ######
+ * ######
+ * ######
+ * ######
+ * ######
+ *
  * Two blues and nothing else: the screen (#4035b0) sitting inside a
  * lighter border (#7b71d6), which is exactly how a C64 filled a TV --
  * the border was a real, unusable margin around the text area, not a

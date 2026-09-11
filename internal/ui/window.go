@@ -25,6 +25,7 @@ package ui
 #include <glib-unix.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include <math.h>
 #include <pango/pangocairo.h>
 
@@ -82,6 +83,12 @@ static GtkWidget *new_window(void) {
 static GtkWidget *new_box_vertical(void) {
 	return gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
 }
+
+// The largest sprite a theme may draw for itself. 16x16 is already more
+// resolution than the 22px tile can show crisply -- past that the cells
+// stop landing on whole device pixels, which is the one thing pixel art
+// cannot survive.
+#define ART_MAX 16
 
 // The overlay draws one of two things, in the same panel: the dictation
 // bar, or a menu.
@@ -145,6 +152,11 @@ typedef struct {
 	int mark;         // which brand mark to draw (MARK_MIC/MARK_PIXEL/MARK_ZERO)
 	char *idle_text;  // themeable placeholder shown when there's nothing to say
 
+	// A theme may supply its own sprite instead of picking a built-in
+	// mark (see slide_set_art). art_rows == 0 means it hasn't.
+	char art[ART_MAX][ART_MAX + 1];
+	int art_rows, art_cols;
+
 	// Menu mode. The same drawing area renders either the dictation bar or
 	// a menu, rather than there being a second window: the panel's look,
 	// position, intro/outro animation and theming are all attached to this
@@ -197,6 +209,8 @@ typedef struct {
 #define PIXEL_CELL 2.0
 #define PIXEL_COLS 7
 #define PIXEL_ROWS 9
+
+
 
 // The cradle arms are what make this read as a microphone rather than a
 // pawn or a nail, so they run *alongside* the head rather than below it,
@@ -251,26 +265,47 @@ static void rounded_rect(cairo_t *cr, double x, double y, double w, double h, do
 // draw_mark paints the brand tile at the left edge: a subtle rounded
 // square holding the accent mark (MARK_STYLE) -- or, during the
 // confirmation, a green check, so the whole bar reads as "done" at a glance.
-// draw_pixel_art paints one of the bitmaps above, centered in the tile,
-// as filled square cells snapped to whole logical pixels.
-static void draw_pixel_art(cairo_t *cr, const char *const *rows, double tile_y) {
-	double art_w = PIXEL_COLS * PIXEL_CELL, art_h = PIXEL_ROWS * PIXEL_CELL;
+// draw_bitmap paints a grid of '#' cells centered in the tile, snapped to
+// whole logical pixels. cell is chosen by the caller so the whole sprite
+// fits the tile; cells stay square and integer-sized, because a fractional
+// cell is an antialiased edge and an antialiased edge is not pixel art.
+static void draw_bitmap(cairo_t *cr, const char *rows, int nrows, int ncols, int stride, double cell, double tile_y) {
+	double art_w = ncols * cell, art_h = nrows * cell;
 	double x0 = floor((MARK_SIZE - art_w) / 2.0);
 	double y0 = floor(tile_y + (MARK_SIZE - art_h) / 2.0);
-	for (int r = 0; r < PIXEL_ROWS; r++) {
-		for (int c = 0; c < PIXEL_COLS; c++) {
-			if (rows[r][c] != '#') {
+	for (int r = 0; r < nrows; r++) {
+		for (int c = 0; c < ncols; c++) {
+			if (rows[r * stride + c] != '#') {
 				continue;
 			}
-			cairo_rectangle(cr, x0 + c * PIXEL_CELL, y0 + r * PIXEL_CELL, PIXEL_CELL, PIXEL_CELL);
+			cairo_rectangle(cr, x0 + c * cell, y0 + r * cell, cell, cell);
 		}
 	}
 	cairo_fill(cr);
 }
 
+// draw_pixel_art paints one of the built-in 7x9 bitmaps above.
+static void draw_pixel_art(cairo_t *cr, const char *const *rows, double tile_y) {
+	char flat[PIXEL_ROWS * PIXEL_COLS];
+	for (int r = 0; r < PIXEL_ROWS; r++) {
+		memcpy(flat + r * PIXEL_COLS, rows[r], PIXEL_COLS);
+	}
+	draw_bitmap(cr, flat, PIXEL_ROWS, PIXEL_COLS, PIXEL_COLS, PIXEL_CELL, tile_y);
+}
+
+// art_cell picks the largest whole-pixel cell size that fits the sprite
+// inside the tile.
+static double art_cell(int rows, int cols) {
+	int longest = rows > cols ? rows : cols;
+	double cell = floor(18.0 / longest);
+	return cell < 1.0 ? 1.0 : cell;
+}
+
 static void draw_mark(GtkWidget *area, cairo_t *cr, int height, SlideState *s) {
 	gboolean confirmed = s->confirmation;
-	gboolean pixel = (s->mark == MARK_PIXEL);
+	// A theme's own sprite is pixel art by construction, so it gets the
+	// same hard-cornered tile the built-in pixel mark does.
+	gboolean pixel = (s->mark == MARK_PIXEL) || (s->art_rows > 0);
 	double y = (height - MARK_SIZE) / 2.0;
 
 	// The tile is a flat surface while idle, and picks up the success tint
@@ -305,6 +340,12 @@ static void draw_mark(GtkWidget *area, cairo_t *cr, int height, SlideState *s) {
 	double cx = MARK_SIZE / 2.0, cy = y + MARK_SIZE / 2.0;
 	set_probe_color(cr, s->probe_accent, 1.0);
 	cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+
+	if (s->art_rows > 0) {
+		draw_bitmap(cr, &s->art[0][0], s->art_rows, s->art_cols, ART_MAX + 1,
+		            art_cell(s->art_rows, s->art_cols), y);
+		return;
+	}
 
 	if (pixel) {
 		draw_pixel_art(cr, MARK_PIXEL_MIC, y);
@@ -666,6 +707,23 @@ static void slide_set_idle_text(SlideState *s, const char *text) {
 	gtk_widget_queue_draw(s->area);
 }
 
+// slide_set_art installs a theme-supplied sprite, given as rows
+// concatenated into one string. Passing 0 rows clears it and returns the
+// bar to whichever built-in mark is selected.
+static void slide_set_art(SlideState *s, const char *flat, int rows, int cols) {
+	s->art_rows = 0;
+	s->art_cols = 0;
+	if (rows > 0 && rows <= ART_MAX && cols > 0 && cols <= ART_MAX) {
+		for (int r = 0; r < rows; r++) {
+			memcpy(s->art[r], flat + r * cols, cols);
+			s->art[r][cols] = '\0';
+		}
+		s->art_rows = rows;
+		s->art_cols = cols;
+	}
+	gtk_widget_queue_draw(s->area);
+}
+
 static void slide_set_mark(SlideState *s, int mark) {
 	s->mark = mark;
 	gtk_widget_queue_draw(s->area);
@@ -957,10 +1015,27 @@ typedef struct {
 	int drop_px;
 	gint64 start_time;
 	double duration_s;
+	gboolean cancelled;
 } HideAnimState;
+
+// The one hide animation that may be in flight, so a Show arriving
+// mid-outro can call it off (see cancel_hide_animation). There is exactly
+// one window, so one slot is the whole story.
+static HideAnimState *active_hide = NULL;
 
 static gboolean hide_anim_tick(GtkWidget *widget, GdkFrameClock *clock, gpointer data) {
 	HideAnimState *s = (HideAnimState *)data;
+
+	// Called off by a Show that arrived while this outro was still
+	// running: stop without touching the window, which is now somebody
+	// else's.
+	if (s->cancelled) {
+		if (active_hide == s) {
+			active_hide = NULL;
+		}
+		free(s);
+		return G_SOURCE_REMOVE;
+	}
 
 	gint64 now = gdk_frame_clock_get_frame_time(clock);
 	double elapsed = (now - s->start_time) / 1000000.0;
@@ -978,10 +1053,26 @@ static gboolean hide_anim_tick(GtkWidget *widget, GdkFrameClock *clock, gpointer
 
 	if (t >= 1.0) {
 		gtk_widget_set_visible(s->window, FALSE);
+		if (active_hide == s) {
+			active_hide = NULL;
+		}
 		free(s);
 		return G_SOURCE_REMOVE;
 	}
 	return G_SOURCE_CONTINUE;
+}
+
+// cancel_hide_animation calls off an outro that hasn't finished. Without
+// this, showing the window again during the ~320ms it takes to close left
+// the finishing tick to unmap the window that had just been re-shown: the
+// panel vanished and, because the caller believed it was on screen, every
+// later attempt to open it did nothing at all. Reaching that state needed
+// nothing more exotic than closing the menu and immediately reopening it.
+static void cancel_hide_animation(void) {
+	if (active_hide != NULL) {
+		active_hide->cancelled = TRUE;
+		active_hide = NULL;
+	}
 }
 
 // start_hide_animation reads the window's actual current position (it
@@ -1007,7 +1098,10 @@ static void start_hide_animation(GtkWidget *window, GtkWidget *panel, int drop_p
 	s->drop_px = drop_px;
 	s->start_time = gdk_frame_clock_get_frame_time(gtk_widget_get_frame_clock(window));
 	s->duration_s = duration_s;
+	s->cancelled = FALSE;
 
+	cancel_hide_animation(); // never run two outros at once
+	active_hide = s;
 	gtk_widget_add_tick_callback(window, hide_anim_tick, s, NULL);
 }
 */
@@ -1018,6 +1112,7 @@ import (
 	"os"
 	"runtime"
 	"runtime/cgo"
+	"strings"
 	"sync"
 	"time"
 	"unsafe"
@@ -1246,6 +1341,13 @@ func (w *Window) ShowCopiedConfirmation() {
 // schedule_show_animation). Must be called from the GTK main thread --
 // use RunOnMainThread from any other goroutine.
 func (w *Window) Show() {
+	// Call off any outro still in flight. It would otherwise finish by
+	// unmapping the window this call is about to show, leaving the app
+	// convinced its panel is on screen when nothing is -- an
+	// unrecoverable state, since the next open sees "already open" and
+	// does nothing.
+	C.cancel_hide_animation()
+
 	// Opacity must already be 0 *before* the window becomes visible, not
 	// only later once schedule_show_animation's delayed callback gets
 	// around to it -- otherwise the window flashes in at full opacity
@@ -1347,6 +1449,37 @@ func (w *Window) SelectMenuItem(index int) {
 // the GTK main thread.
 func (w *Window) DismissMenu() {
 	C.menu_dismiss(w.slide, w.win, w.panel, viewportWidthPx, viewportHeightPx)
+}
+
+// MaxArtSize is the largest sprite a theme may supply to SetMarkArt.
+const MaxArtSize = 16
+
+// SetMarkArt gives the overlay a theme-supplied sprite to draw in place
+// of the built-in mark: one string per row, '#' for a filled cell and
+// anything else for empty. Rows must all be the same length and neither
+// dimension may exceed MaxArtSize. Passing nil clears it. Must be called
+// from the GTK main thread.
+func (w *Window) SetMarkArt(rows []string) {
+	if len(rows) == 0 || len(rows) > MaxArtSize {
+		C.slide_set_art(w.slide, nil, 0, 0)
+		return
+	}
+	cols := len(rows[0])
+	if cols == 0 || cols > MaxArtSize {
+		C.slide_set_art(w.slide, nil, 0, 0)
+		return
+	}
+	var flat strings.Builder
+	for _, row := range rows {
+		if len(row) != cols {
+			C.slide_set_art(w.slide, nil, 0, 0) // ragged: refuse rather than draw garbage
+			return
+		}
+		flat.WriteString(row)
+	}
+	withCString(flat.String(), func(c *C.char) {
+		C.slide_set_art(w.slide, c, C.int(len(rows)), C.int(cols))
+	})
 }
 
 // SetIdleText sets the placeholder shown when there's no transcript yet,

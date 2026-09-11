@@ -740,3 +740,59 @@ reason to refuse to start.
 - **Bevels come from stacked inset box-shadows**, outermost first —
   white/light on the top-left, dark/black on the bottom-right. That's the
   whole of Win98's and Winamp's chrome.
+
+## Theme-drawn sprites
+
+Three named marks (mic/pixel/zero) were never going to cover eighteen
+themes: the right icon for a Tamagotchi is a creature, for an Xbox a
+jewel, and no fixed enum guesses that. So a theme can draw its own, in
+the stylesheet, as a grid of `.` and `#` up to 16x16:
+
+```css
+/* 0type-art:
+ * ..#####..
+ * .#.###.#.
+ * .#######.
+ */
+```
+
+The rows must start on the line immediately after the directive and all
+be the same width; anything else is a hard error naming the offending
+row, because a ragged sprite would quietly draw something other than what
+was laid out, and what-you-type-is-what-you-see is the entire point.
+(The first attempt at these themes put two lines of prose between the
+directive and its rows and was caught by the built-in-theme test, which
+is exactly the sort of thing that test is for.)
+
+Cell size is chosen so the whole sprite fits the 22px tile at a whole
+number of logical pixels -- `floor(18 / max(rows, cols))`. A fractional
+cell is an antialiased edge, and an antialiased edge is not pixel art.
+16x16 is the cap for the same reason: past that the cells stop landing on
+whole device pixels.
+
+## A window that could never be shown again
+
+Symptom: `0type` ran and exited cleanly, the process was alive and its
+main loop was ticking, and no window ever appeared -- not for the menu,
+not for the toggle either.
+
+Cause: `Show()` arriving while `Hide()`'s outro animation was still
+playing. The outro runs for ~320ms and finishes by unmapping the window;
+if something showed the window during that window of time, the finishing
+tick unmapped what had just been mapped. The app then believed its panel
+was on screen, so `openMenu` took its "already open" early return and did
+nothing -- forever. Closing the menu and immediately reopening it was
+enough to get there.
+
+Two fixes, because either alone leaves a sharp edge:
+
+- `Show()` now cancels an in-flight outro (`cancel_hide_animation`), so
+  the two animations can't fight over the same window.
+- `openMenu` no longer early-returns when it thinks the menu is open. It
+  re-renders and re-shows unconditionally, so if the app's idea of what's
+  on screen ever drifts from reality again, running `0type` fixes it
+  instead of silently doing nothing.
+
+Worth remembering that the *first* report of this was "the toggle is not
+working" and the second was "the menu doesn't open" -- two different
+symptoms, one race.

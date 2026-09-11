@@ -4,6 +4,17 @@
  * 0type-idle: Ready
  * 0type-copied: Message saved
  *
+ * Signal bars: the only status anyone ever actually looked at.
+ * 0type-art:
+ * .......#
+ * .......#
+ * .....#.#
+ * .....#.#
+ * ...#.#.#
+ * ...#.#.#
+ * .#.#.#.#
+ * .#.#.#.#
+ *
  * A monochrome reflective LCD: no backlight, so the "white" is the
  * yellow-green of the panel itself (#9ba883) and the "black" is just
  * where the segments are switched on. Contrast is deliberately poor,

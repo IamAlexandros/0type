@@ -38,10 +38,21 @@ type Directives struct {
 	Mark   string
 	Idle   string // idle placeholder, e.g. "READY"
 	Copied string // end-of-session confirmation
+	// Art is a sprite the theme draws itself, one string per row, '#' for
+	// a filled cell. Empty means use Mark instead. Three named marks were
+	// never going to cover this: the right icon for a Tamagotchi is a
+	// creature, for an Xbox a jewel, and no fixed enum guesses that.
+	Art []string
 }
+
+// MaxArt is the largest sprite a theme may draw. Must match
+// internal/ui.MaxArtSize, which is what actually renders it.
+const MaxArt = 16
 
 var (
 	markDirective   = regexp.MustCompile(`0type-mark\s*:\s*([A-Za-z0-9_-]+)`)
+	artDirective    = regexp.MustCompile(`0type-art\s*:`)
+	artRow          = regexp.MustCompile(`^[.#]+$`)
 	idleDirective   = regexp.MustCompile(`0type-idle\s*:([^\n*]*)`)
 	copiedDirective = regexp.MustCompile(`0type-copied\s*:([^\n*]*)`)
 )
@@ -78,5 +89,59 @@ func parseDirectives(css []byte) (Directives, error) {
 		}
 	}
 
+	art, err := parseArt(css)
+	if err != nil {
+		return Directives{}, err
+	}
+	d.Art = art
+
 	return d, nil
+}
+
+// parseArt reads the rows following a `0type-art:` directive. Each row is
+// the run of '.' and '#' on its own line; the block ends at the first
+// line that isn't one, so the closing `*/` terminates it naturally:
+//
+//	/* 0type-art:
+//	 * ..###..
+//	 * .#####.
+//	 */
+//
+// A malformed block is an error rather than a partial sprite: ragged rows
+// would silently draw something other than what the author laid out, and
+// the whole point of this directive is that what you type is what you
+// see.
+func parseArt(css []byte) ([]string, error) {
+	loc := artDirective.FindIndex(css)
+	if loc == nil {
+		return nil, nil
+	}
+
+	var rows []string
+	for _, line := range strings.Split(string(css[loc[1]:]), "\n")[1:] {
+		// Strip the comment furniture a CSS block comment puts at the
+		// start of each line.
+		cleaned := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "*"))
+		if !artRow.MatchString(cleaned) {
+			break
+		}
+		rows = append(rows, cleaned)
+	}
+
+	if len(rows) == 0 {
+		return nil, fmt.Errorf("0type-art: declared but no rows of '.' and '#' follow it")
+	}
+	if len(rows) > MaxArt {
+		return nil, fmt.Errorf("0type-art: %d rows, maximum is %d", len(rows), MaxArt)
+	}
+	width := len(rows[0])
+	if width > MaxArt {
+		return nil, fmt.Errorf("0type-art: rows are %d cells wide, maximum is %d", width, MaxArt)
+	}
+	for i, row := range rows {
+		if len(row) != width {
+			return nil, fmt.Errorf("0type-art: row %d is %d cells wide, but row 1 is %d -- every row must be the same width", i+1, len(row), width)
+		}
+	}
+	return rows, nil
 }

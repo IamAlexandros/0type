@@ -116,6 +116,7 @@ func loadTheme(flagValue string, cfg *config.Config) (*theme.Theme, error) {
 func applyTheme(win *ui.Window, th *theme.Theme) {
 	win.LoadCSS(th.CSS)
 	win.SetMark(ui.Mark(th.Mark))
+	win.SetMarkArt(th.Art) // a theme's own sprite, if it drew one
 	win.SetIdleText(th.Idle)
 	win.SetCopiedText(th.Copied)
 }

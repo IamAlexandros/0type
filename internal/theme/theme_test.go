@@ -288,3 +288,81 @@ func TestLoadRejectsBadDirective(t *testing.T) {
 		t.Fatal("expected an error for an unknown mark directive")
 	}
 }
+
+func TestParseArt(t *testing.T) {
+	d, err := parseDirectives([]byte("/* nice\n * 0type-art:\n * .#.\n * ###\n * .#.\n */\n#zt-panel {}"))
+	if err != nil {
+		t.Fatalf("parseDirectives: %v", err)
+	}
+	want := []string{".#.", "###", ".#."}
+	if len(d.Art) != len(want) {
+		t.Fatalf("Art = %v, want %v", d.Art, want)
+	}
+	for i := range want {
+		if d.Art[i] != want[i] {
+			t.Errorf("Art[%d] = %q, want %q", i, d.Art[i], want[i])
+		}
+	}
+}
+
+func TestParseArtAbsent(t *testing.T) {
+	d, err := parseDirectives([]byte("#zt-panel {}"))
+	if err != nil {
+		t.Fatalf("parseDirectives: %v", err)
+	}
+	if d.Art != nil {
+		t.Errorf("Art = %v, want nil", d.Art)
+	}
+}
+
+// Every one of these would otherwise draw something other than what the
+// author laid out, which defeats the point of drawing it by hand.
+func TestParseArtErrors(t *testing.T) {
+	cases := map[string]string{
+		"no rows":   "/* 0type-art:\n * not art\n */",
+		"ragged":    "/* 0type-art:\n * ###\n * ##\n */",
+		"too wide":  "/* 0type-art:\n * " + strings.Repeat("#", MaxArt+1) + "\n */",
+		"too tall":  "/* 0type-art:\n" + strings.Repeat(" * ##\n", MaxArt+1) + " */",
+		"empty art": "/* 0type-art:\n */",
+	}
+	for name, css := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := parseDirectives([]byte(css)); err == nil {
+				t.Fatalf("parseDirectives(%q) succeeded, want an error", css)
+			}
+		})
+	}
+}
+
+// A theme's sprite must survive loading, and must be within the limits
+// the renderer can actually draw.
+func TestBuiltinArtIsDrawable(t *testing.T) {
+	userThemeDir(t)
+
+	var withArt int
+	for _, name := range builtinNames() {
+		th, err := Load(name)
+		if err != nil {
+			t.Fatalf("Load(%q): %v", name, err)
+		}
+		if len(th.Art) == 0 {
+			continue
+		}
+		withArt++
+		if len(th.Art) > MaxArt {
+			t.Errorf("%s: %d rows, max %d", name, len(th.Art), MaxArt)
+		}
+		width := len(th.Art[0])
+		for i, row := range th.Art {
+			if len(row) != width {
+				t.Errorf("%s: row %d is %d wide, row 0 is %d", name, i, len(row), width)
+			}
+			if strings.Trim(row, ".#") != "" {
+				t.Errorf("%s: row %d has characters other than . and #: %q", name, i, row)
+			}
+		}
+	}
+	if withArt == 0 {
+		t.Error("no built-in theme draws its own sprite; the directive is untested in practice")
+	}
+}
