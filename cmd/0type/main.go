@@ -26,6 +26,8 @@ func run(args []string) error {
 	case "version":
 		fmt.Println("0type " + version)
 		return nil
+	case "debug":
+		return runDebug(args[1:])
 	default:
 		return fmt.Errorf("unknown subcommand %q", args[0])
 	}
