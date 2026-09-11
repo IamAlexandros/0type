@@ -46,6 +46,30 @@ static guint schedule_unix_signal(int signum, guintptr handle) {
 	return g_unix_signal_add(signum, source_trampoline_c, (gpointer)handle);
 }
 
+// goKeyPressed is exported below; key_pressed_c adapts it to GTK's
+// key-pressed signal signature. Returning TRUE stops the event from
+// propagating further, which is what we want for any key the menu
+// actually handles.
+extern gboolean goKeyPressed(guint keyval);
+
+static gboolean key_pressed_c(GtkEventControllerKey *controller, guint keyval, guint keycode, GdkModifierType state, gpointer data) {
+	return goKeyPressed(keyval);
+}
+
+// install_key_controller puts the key handler on the window in the
+// *capture* phase. The default bubble phase propagates up from whatever
+// widget holds focus, and this window deliberately contains nothing
+// focusable (a drawing area and some invisible probes), so in bubble
+// phase there is no target for an event to start from and key presses are
+// simply dropped. Capture runs top-down from the toplevel instead, which
+// needs no focus widget at all.
+static void install_key_controller(GtkWidget *window) {
+	GtkEventController *controller = gtk_event_controller_key_new();
+	gtk_event_controller_set_propagation_phase(controller, GTK_PHASE_CAPTURE);
+	g_signal_connect(controller, "key-pressed", G_CALLBACK(key_pressed_c), NULL);
+	gtk_widget_add_controller(window, controller);
+}
+
 // Everything below is typed in terms of plain GtkWidget* at the Go
 // boundary; the GTK_WINDOW()/GTK_BOX()/GTK_LABEL() type-cast macros are
 // applied here in C, so the Go side never has to reason about GObject's
@@ -58,6 +82,24 @@ static GtkWidget *new_window(void) {
 static GtkWidget *new_box_vertical(void) {
 	return gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
 }
+
+// The overlay draws one of two things, in the same panel: the dictation
+// bar, or a menu.
+#define MODE_BAR  0
+#define MODE_MENU 1
+
+// Menu geometry, in the drawing area's logical pixels. MENU_ROW_H is
+// deliberately close to the bar's own height so the panel doesn't change
+// character between modes.
+#define MENU_MAX_ITEMS 16
+#define MENU_ROW_H     30.0
+#define MENU_ROW_PAD    6.0
+#define MENU_RADIUS     8.0
+
+typedef struct {
+	char *label;
+	char *detail; // right-aligned secondary text (the current value, a hint)
+} MenuItem;
 
 // SlideState is the whole content of the bar: a GtkDrawingArea (not a
 // GtkLabel -- every attempt to get a fixed-size GTK *container* to hold a
@@ -101,6 +143,19 @@ typedef struct {
 	GtkWidget *probe_tile;    // the mark's tile surface
 
 	int mark; // which brand mark to draw (MARK_MIC/MARK_PIXEL/MARK_ZERO)
+
+	// Menu mode. The same drawing area renders either the dictation bar or
+	// a menu, rather than there being a second window: the panel's look,
+	// position, intro/outro animation and theming are all attached to this
+	// one window, and a separate menu window would have to reimplement
+	// every one of them to look like it belonged to the same program.
+	int mode;
+	MenuItem menu[MENU_MAX_ITEMS];
+	int menu_count;
+	int menu_selected;
+	double sel_y_current; // eased toward the selected row, so the highlight glides
+	double sel_y_target;
+	gboolean sel_started;
 } SlideState;
 
 // Geometry of the three regions, in the drawing area's logical pixels.
@@ -349,8 +404,62 @@ static void draw_content(GtkWidget *area, cairo_t *cr, int width, int height, Sl
 	cairo_restore(cr);
 }
 
+// draw_menu paints the menu: one row per item, with the selected row
+// carrying a soft highlight that glides between rows rather than
+// teleporting (see slide_tick). Labels use the panel's text color and
+// details the muted one, so a menu inherits a theme without the theme
+// having to know menus exist.
+static void draw_menu(GtkWidget *area, cairo_t *cr, int width, int height, SlideState *s) {
+	double x = MENU_ROW_PAD, w = width - 2 * MENU_ROW_PAD;
+
+	if (s->menu_count > 0) {
+		set_probe_color(cr, s->probe_accent, 0.16);
+		rounded_rect(cr, x, s->sel_y_current + 2, w, MENU_ROW_H - 4, MENU_RADIUS);
+		cairo_fill(cr);
+	}
+
+	GdkRGBA text;
+	gtk_widget_get_color(area, &text);
+
+	for (int i = 0; i < s->menu_count; i++) {
+		double row_y = i * MENU_ROW_H;
+		gboolean selected = (i == s->menu_selected);
+
+		PangoLayout *layout = gtk_widget_create_pango_layout(area, s->menu[i].label);
+		pango_layout_set_single_paragraph_mode(layout, TRUE);
+		int tw, th;
+		pango_layout_get_pixel_size(layout, &tw, &th);
+		// The selected row's label takes the accent color; everything else
+		// stays text-colored, so the eye lands on one row.
+		if (selected) {
+			set_probe_color(cr, s->probe_accent, 1.0);
+		} else {
+			cairo_set_source_rgba(cr, text.red, text.green, text.blue, text.alpha * 0.82);
+		}
+		cairo_move_to(cr, x + MENU_ROW_PAD + 4, row_y + (MENU_ROW_H - th) / 2.0);
+		pango_cairo_show_layout(cr, layout);
+		g_object_unref(layout);
+
+		if (s->menu[i].detail == NULL || s->menu[i].detail[0] == '\0') {
+			continue;
+		}
+		PangoLayout *dl = gtk_widget_create_pango_layout(area, s->menu[i].detail);
+		pango_layout_set_single_paragraph_mode(dl, TRUE);
+		int dw, dh;
+		pango_layout_get_pixel_size(dl, &dw, &dh);
+		set_probe_color(cr, s->probe_muted, 1.0);
+		cairo_move_to(cr, x + w - MENU_ROW_PAD - 4 - dw, row_y + (MENU_ROW_H - dh) / 2.0);
+		pango_cairo_show_layout(cr, dl);
+		g_object_unref(dl);
+	}
+}
+
 static void slide_draw(GtkDrawingArea *area, cairo_t *cr, int width, int height, gpointer data) {
 	SlideState *s = (SlideState *)data;
+	if (s->mode == MODE_MENU) {
+		draw_menu(GTK_WIDGET(area), cr, width, height, s);
+		return;
+	}
 	draw_content(GTK_WIDGET(area), cr, width, height, s);
 	draw_mark(GTK_WIDGET(area), cr, height, s);
 	draw_bars(cr, width, height, s);
@@ -383,6 +492,13 @@ static gboolean slide_tick(GtkWidget *widget, GdkFrameClock *clock, gpointer dat
 		s->current_x += diff * (1.0 - exp(-dt / 0.11)); // tau 110ms: snappy but not abrupt
 	}
 	s->level_current += (s->level_target - s->level_current) * (1.0 - exp(-dt / 0.06));
+
+	double sel_diff = s->sel_y_target - s->sel_y_current;
+	if (fabs(sel_diff) < 0.25) {
+		s->sel_y_current = s->sel_y_target;
+	} else {
+		s->sel_y_current += sel_diff * (1.0 - exp(-dt / 0.07)); // faster than the text: a cursor should feel immediate
+	}
 
 	gtk_widget_queue_draw(s->area);
 	return G_SOURCE_CONTINUE;
@@ -448,6 +564,98 @@ static void slide_show_confirmation(SlideState *s, const char *text) {
 	gtk_widget_queue_draw(s->area);
 }
 
+static void menu_clear(SlideState *s) {
+	for (int i = 0; i < s->menu_count; i++) {
+		g_free(s->menu[i].label);
+		g_free(s->menu[i].detail);
+		s->menu[i].label = NULL;
+		s->menu[i].detail = NULL;
+	}
+	s->menu_count = 0;
+}
+
+static void menu_add(SlideState *s, const char *label, const char *detail) {
+	if (s->menu_count >= MENU_MAX_ITEMS) {
+		return;
+	}
+	s->menu[s->menu_count].label = g_strdup(label);
+	s->menu[s->menu_count].detail = g_strdup(detail);
+	s->menu_count++;
+}
+
+static void menu_set_selected(SlideState *s, int selected) {
+	if (selected < 0 || selected >= s->menu_count) {
+		return;
+	}
+	s->menu_selected = selected;
+	s->sel_y_target = selected * MENU_ROW_H;
+	if (!s->sel_started) {
+		s->sel_started = TRUE;
+		s->sel_y_current = s->sel_y_target; // the first selection snaps; later ones glide
+	}
+	gtk_widget_queue_draw(s->area);
+}
+
+// resize_to_content forces the toplevel to the size its content now
+// wants. Growing the drawing area alone is not enough: GTK settles a
+// toplevel's size when it is mapped and then leaves it there, so a window
+// that was mapped as a one-line bar stays one line tall no matter how
+// much taller its child asks to be -- the extra rows just draw outside
+// the panel. Measuring the panel (gtk_widget_measure includes its CSS
+// margin, border and padding) and setting that as the default size is
+// what actually moves the window.
+static void resize_to_content(GtkWidget *window, GtkWidget *panel) {
+	int min_w, nat_w, min_h, nat_h;
+	gtk_widget_measure(panel, GTK_ORIENTATION_HORIZONTAL, -1, &min_w, &nat_w, NULL, NULL);
+	gtk_widget_measure(panel, GTK_ORIENTATION_VERTICAL, nat_w, &min_h, &nat_h, NULL, NULL);
+	gtk_window_set_default_size(GTK_WINDOW(window), nat_w, nat_h);
+	gtk_widget_queue_resize(window);
+
+	// The default size alone doesn't move an already-realized window: the
+	// surface was sized when prepare_overlay realized it, back when the
+	// panel still held a one-line bar, and GTK won't renegotiate a
+	// toplevel it has already given a surface. This window's geometry is
+	// driven directly through Xlib anyway (see prepare_overlay and
+	// show_anim_start_cb, which move it in raw screen coordinates), so
+	// resize it the same way -- GDK picks the new size up from the
+	// resulting ConfigureNotify and GTK reallocates the panel to match.
+	GtkNative *native = gtk_widget_get_native(window);
+	GdkSurface *surface = native ? gtk_native_get_surface(native) : NULL;
+	if (!surface) {
+		return;
+	}
+	int scale = gdk_surface_get_scale_factor(surface);
+	if (scale < 1) {
+		scale = 1;
+	}
+	Window xid = gdk_x11_surface_get_xid(surface);
+	Display *xdisplay = GDK_SURFACE_XDISPLAY(surface);
+	XResizeWindow(xdisplay, xid, (unsigned)(nat_w * scale), (unsigned)(nat_h * scale));
+	XFlush(xdisplay);
+}
+
+// menu_commit switches the panel into menu mode, sizes the drawing area
+// to fit the rows, and resizes the window around it. Show reads the
+// window's real geometry when it positions it, so nothing else has to
+// know the height changed.
+static void menu_commit(SlideState *s, GtkWidget *window, GtkWidget *panel, int width, int selected) {
+	s->mode = MODE_MENU;
+	s->sel_started = FALSE;
+	menu_set_selected(s, selected);
+	gtk_drawing_area_set_content_width(GTK_DRAWING_AREA(s->area), width);
+	gtk_drawing_area_set_content_height(GTK_DRAWING_AREA(s->area), (int)(s->menu_count * MENU_ROW_H));
+	resize_to_content(window, panel);
+}
+
+// menu_dismiss returns the panel to the dictation bar at its usual size.
+static void menu_dismiss(SlideState *s, GtkWidget *window, GtkWidget *panel, int width, int height) {
+	menu_clear(s);
+	s->mode = MODE_BAR;
+	gtk_drawing_area_set_content_width(GTK_DRAWING_AREA(s->area), width);
+	gtk_drawing_area_set_content_height(GTK_DRAWING_AREA(s->area), height);
+	resize_to_content(window, panel);
+}
+
 static void slide_set_mark(SlideState *s, int mark) {
 	s->mark = mark;
 	gtk_widget_queue_draw(s->area);
@@ -508,12 +716,22 @@ static void widget_set_name(GtkWidget *widget, const char *name) {
 // a path: themes can be built into the binary (see internal/theme), so
 // 0type must not depend on a themes/ directory existing next to wherever
 // it happens to be run from.
+//
+// One provider, reused. Adding a fresh provider per call would *stack*
+// stylesheets: the newest wins wherever two themes set the same property,
+// but any property the old theme set and the new one doesn't would linger
+// forever. That's invisible when the theme is only loaded once at
+// startup, and immediately visible when switching themes live in the
+// settings menu.
+static GtkCssProvider *css_provider = NULL;
+
 static void load_css(const char *css) {
-	GtkCssProvider *provider = gtk_css_provider_new();
-	gtk_css_provider_load_from_string(provider, css);
-	GdkDisplay *display = gdk_display_get_default();
-	gtk_style_context_add_provider_for_display(display, GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-	g_object_unref(provider);
+	if (css_provider == NULL) {
+		css_provider = gtk_css_provider_new();
+		GdkDisplay *display = gdk_display_get_default();
+		gtk_style_context_add_provider_for_display(display, GTK_STYLE_PROVIDER(css_provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+	}
+	gtk_css_provider_load_from_string(css_provider, css);
 }
 
 static void set_clipboard_text(const char *text) {
@@ -547,6 +765,55 @@ static void prepare_overlay(GtkWidget *window, int width) {
 	XSetWindowAttributes attrs;
 	attrs.override_redirect = True;
 	XChangeWindowAttributes(xdisplay, xid, CWOverrideRedirect, &attrs);
+}
+
+// grab_keyboard directs key events to this window. An override-redirect
+// window is invisible to the window manager by design (that's how the
+// overlay stays out of the taskbar and alt-tab), and the flip side is
+// that nothing ever gives it keyboard focus: XSetInputFocus alone is not
+// enough under Xwayland, because Mutter decides which X client holds
+// focus and it has no reason to pick a window it isn't managing. An
+// active grab takes the keyboard regardless, which is the same thing
+// every X11 popup menu does.
+//
+// Returns TRUE if the grab succeeded. It can legitimately fail (another
+// client already holds a grab -- a menu open elsewhere, the overview),
+// in which case the caller must cope rather than assume it has input.
+static gboolean grab_keyboard(GtkWidget *window) {
+	GtkNative *native = gtk_widget_get_native(window);
+	GdkSurface *surface = gtk_native_get_surface(native);
+	if (!surface) {
+		return FALSE;
+	}
+	Window xid = gdk_x11_surface_get_xid(surface);
+	Display *xdisplay = GDK_SURFACE_XDISPLAY(surface);
+
+	// XSetInputFocus on a window that isn't viewable yet is a BadMatch,
+	// and GDK's default X error handler turns that into an immediate,
+	// fatal exit -- so this must never be called optimistically. The
+	// window is not viewable for a short while after Show (it maps during
+	// the intro animation), which is exactly when a menu wants the
+	// keyboard, hence the check and the caller's retry loop.
+	XWindowAttributes attrs;
+	if (!XGetWindowAttributes(xdisplay, xid, &attrs) || attrs.map_state != IsViewable) {
+		return FALSE;
+	}
+
+	XSetInputFocus(xdisplay, xid, RevertToPointerRoot, CurrentTime);
+	int status = XGrabKeyboard(xdisplay, xid, True, GrabModeAsync, GrabModeAsync, CurrentTime);
+	XFlush(xdisplay);
+	return status == GrabSuccess;
+}
+
+static void ungrab_keyboard(GtkWidget *window) {
+	GtkNative *native = gtk_widget_get_native(window);
+	GdkSurface *surface = gtk_native_get_surface(native);
+	if (!surface) {
+		return;
+	}
+	Display *xdisplay = GDK_SURFACE_XDISPLAY(surface);
+	XUngrabKeyboard(xdisplay, CurrentTime);
+	XFlush(xdisplay);
 }
 
 // ShowAnimState drives the intro animation: the panel fades in
@@ -593,6 +860,7 @@ typedef struct {
 	GtkWidget *window;
 	GtkWidget *panel;
 	int bottom_margin;
+	gboolean centered; // TRUE places the panel in the middle of the screen instead
 	int rise_px;
 	double duration_s;
 } ShowAnimCtx;
@@ -615,7 +883,15 @@ static gboolean show_anim_start_cb(gpointer data) {
 	if (x < 0) {
 		x = 0;
 	}
-	int y = screen_h - real.height - ctx->bottom_margin;
+	// The dictation bar sits near the bottom, out of the way of whatever
+	// you're dictating into. The menu is something you look at and act on,
+	// so it belongs in the middle of the screen where a launcher would be.
+	int y;
+	if (ctx->centered) {
+		y = (screen_h - real.height) / 2;
+	} else {
+		y = screen_h - real.height - ctx->bottom_margin;
+	}
 	if (y < 0) {
 		y = 0;
 	}
@@ -646,11 +922,12 @@ static gboolean show_anim_start_cb(gpointer data) {
 // logical-vs-physical-pixel-scale reason documented there), then starts
 // the fade+rise intro animation into its final centered,
 // bottom_margin-above-the-bottom position.
-static void schedule_show_animation(GtkWidget *window, GtkWidget *panel, int bottom_margin, guint delay_ms, int rise_px, double duration_s) {
+static void schedule_show_animation(GtkWidget *window, GtkWidget *panel, int bottom_margin, gboolean centered, guint delay_ms, int rise_px, double duration_s) {
 	ShowAnimCtx *ctx = malloc(sizeof(ShowAnimCtx));
 	ctx->window = window;
 	ctx->panel = panel;
 	ctx->bottom_margin = bottom_margin;
+	ctx->centered = centered;
 	ctx->rise_px = rise_px;
 	ctx->duration_s = duration_s;
 	g_timeout_add(delay_ms, show_anim_start_cb, ctx);
@@ -731,6 +1008,8 @@ import (
 	"os"
 	"runtime"
 	"runtime/cgo"
+	"sync"
+	"time"
 	"unsafe"
 )
 
@@ -770,6 +1049,9 @@ const (
 	// centered within whatever height this is.
 	viewportWidthPx  = 300
 	viewportHeightPx = 30
+	// menuWidthPx is wider than the bar: menu rows carry a label and a
+	// right-aligned value, and at the bar's width the two collide.
+	menuWidthPx = 340
 	// repositionDelayMs must exceed how long GTK takes to finish its
 	// first real layout pass after being shown; measured at ~well under
 	// 500ms during development, so 150ms leaves comfortable margin
@@ -791,6 +1073,12 @@ type Window struct {
 	panel *C.GtkWidget
 	slide *C.SlideState
 	loop  *C.GMainLoop
+
+	// centered selects where the next Show puts the window: the middle of
+	// the screen (the menu, which you look at) rather than near the bottom
+	// (the dictation bar, which should stay out of the way of whatever
+	// you're typing into).
+	centered bool
 }
 
 // New creates the window and builds its widget tree: a styled panel
@@ -812,6 +1100,7 @@ func New(initialText string) (*Window, error) {
 	slide := C.new_slide_area(viewportWidthPx, viewportHeightPx)
 	withCString("zt-label", func(c *C.char) { C.widget_set_name(slide.area, c) })
 
+	C.install_key_controller(win)
 	C.box_append(box, slide.area)
 	C.slide_set_probes(slide,
 		newColorProbe(box, "zt-accent"),
@@ -940,7 +1229,11 @@ func (w *Window) Show() {
 	// visible flash-then-jump before any fade/rise ever started.
 	C.widget_set_opacity(w.panel, 0.0)
 	C.widget_set_visible(w.win, C.TRUE)
-	C.schedule_show_animation(w.win, w.panel, C.int(bottomMarginPx), repositionDelayMs, showAnimRisePx, showAnimDurationS)
+	centered := C.gboolean(C.FALSE)
+	if w.centered {
+		centered = C.TRUE
+	}
+	C.schedule_show_animation(w.win, w.panel, C.int(bottomMarginPx), centered, repositionDelayMs, showAnimRisePx, showAnimDurationS)
 }
 
 // Hide plays the outro animation (fade out while easing down by
@@ -993,6 +1286,144 @@ func (w *Window) Quit() {
 			C.g_main_loop_quit(w.loop)
 		}
 	})
+}
+
+// MenuItem is one row of the overlay's menu: a label, and optional
+// secondary text shown right-aligned (the current value, or a hint).
+type MenuItem struct {
+	Label  string
+	Detail string
+}
+
+// ShowMenu switches the panel from the dictation bar to a menu of items,
+// with the given row selected, and resizes the window to fit. Call
+// DismissMenu to go back. Must be called from the GTK main thread -- use
+// RunOnMainThread from any other goroutine.
+func (w *Window) ShowMenu(items []MenuItem, selected int) {
+	C.menu_clear(w.slide)
+	for _, item := range items {
+		withCString(item.Label, func(label *C.char) {
+			withCString(item.Detail, func(detail *C.char) {
+				C.menu_add(w.slide, label, detail)
+			})
+		})
+	}
+	C.menu_commit(w.slide, w.win, w.panel, menuWidthPx, C.int(selected))
+}
+
+// SelectMenuItem moves the menu's selection. The highlight animates to
+// the new row. Must be called from the GTK main thread.
+func (w *Window) SelectMenuItem(index int) {
+	C.menu_set_selected(w.slide, C.int(index))
+}
+
+// DismissMenu returns the panel to the dictation bar. Must be called from
+// the GTK main thread.
+func (w *Window) DismissMenu() {
+	C.menu_dismiss(w.slide, w.win, w.panel, viewportWidthPx, viewportHeightPx)
+}
+
+// SetCentered chooses where the next Show places the window: centered on
+// screen when true, near the bottom edge when false (the default). Must
+// be called before Show.
+func (w *Window) SetCentered(centered bool) {
+	w.centered = centered
+}
+
+// Key is a keyboard key the overlay reacts to. Only the handful the menu
+// needs are named; everything else arrives as KeyOther.
+type Key int
+
+const (
+	KeyOther Key = iota
+	KeyUp
+	KeyDown
+	KeyEnter
+	KeyEscape
+)
+
+// keyHandler is the single, process-wide key callback. GTK delivers key
+// events on the main thread, and 0type has exactly one window, so a
+// package-level variable is honest here -- a registry keyed by window
+// would be indirection with nothing to point at. Guarded anyway because
+// SetKeyHandler may be called before Run from a different goroutine.
+var (
+	keyMu      sync.Mutex
+	keyHandler func(Key) bool
+)
+
+// SetKeyHandler installs fn as the overlay's keyboard handler; it is
+// called on the GTK main thread for every key press while the window has
+// the keyboard, and should return true if it consumed the key. Pass nil
+// to stop handling keys.
+func (w *Window) SetKeyHandler(fn func(Key) bool) {
+	keyMu.Lock()
+	keyHandler = fn
+	keyMu.Unlock()
+}
+
+// GrabKeyboard directs key events to the overlay. It retries for a short
+// while because the window is not yet viewable for the first frames after
+// Show -- and an override-redirect window can't be focused until it is.
+// Calls back with whether the keyboard was obtained; a false means
+// something else holds a grab (another popup, the GNOME overview) and the
+// caller must not pretend it has input. Must be called from the GTK main
+// thread; done reports on that thread too.
+func (w *Window) GrabKeyboard(done func(bool)) {
+	const (
+		attempts = 20
+		interval = 25 * time.Millisecond
+	)
+	var try func(left int)
+	try = func(left int) {
+		if C.grab_keyboard(w.win) == C.TRUE {
+			done(true)
+			return
+		}
+		if left <= 0 {
+			done(false)
+			return
+		}
+		time.AfterFunc(interval, func() { RunOnMainThread(func() { try(left - 1) }) })
+	}
+	try(attempts)
+}
+
+// ReleaseKeyboard gives the keyboard back. Every GrabKeyboard must be
+// paired with one of these, including on the paths where the window is
+// closing -- a keyboard grab that outlives its window locks the user out
+// of their session.
+func (w *Window) ReleaseKeyboard() {
+	C.ungrab_keyboard(w.win)
+}
+
+//export goKeyPressed
+func goKeyPressed(keyval C.guint) C.gboolean {
+	keyMu.Lock()
+	fn := keyHandler
+	keyMu.Unlock()
+	if fn == nil {
+		return C.FALSE
+	}
+
+	var key Key
+	switch keyval {
+	case C.GDK_KEY_Up:
+		key = KeyUp
+	case C.GDK_KEY_Down:
+		key = KeyDown
+	case C.GDK_KEY_Return, C.GDK_KEY_KP_Enter:
+		key = KeyEnter
+	case C.GDK_KEY_Escape:
+		key = KeyEscape
+	default:
+		key = KeyOther
+	}
+
+	if fn(key) {
+		return C.TRUE
+	}
+	return C.FALSE
 }
 
 //export goSourceTrampoline

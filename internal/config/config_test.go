@@ -164,3 +164,93 @@ func TestPathUsesXDGConfigHome(t *testing.T) {
 		t.Errorf("Path() = %q, want %q", path, want)
 	}
 }
+
+func TestSetThemePreservesTheRestOfTheFile(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", root)
+	path := filepath.Join(root, "0type", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	original := `# my settings
+theme = "default"
+
+[hooks]
+on_copy = "wtype -"   # type it out
+`
+	if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SetTheme("term"); err != nil {
+		t.Fatalf("SetTheme: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(data)
+	// The settings menu writes this file on the user's behalf; losing
+	// their comments or hooks would make choosing a theme destructive.
+	for _, want := range []string{`theme = "term"`, "# my settings", "[hooks]", `on_copy = "wtype -"`, "# type it out"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("rewritten config lost %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, `theme = "default"`) {
+		t.Errorf("old theme line survived:\n%s", got)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("reloading what we wrote: %v", err)
+	}
+	if cfg.Theme != "term" || cfg.Hooks["on_copy"] != "wtype -" {
+		t.Errorf("reloaded config = %+v", cfg)
+	}
+}
+
+func TestSetThemeCreatesFile(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	if err := SetTheme("mono"); err != nil {
+		t.Fatalf("SetTheme: %v", err)
+	}
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Theme != "mono" {
+		t.Errorf("Theme = %q, want mono", cfg.Theme)
+	}
+}
+
+// A `theme` key inside a [section] is a different key that happens to
+// share a name, so the top-level one must be added rather than that one
+// rewritten.
+func TestSetThemeIgnoresSectionKeys(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", root)
+	path := filepath.Join(root, "0type", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("[hooks]\non_start = \"echo theme = 1\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SetTheme("light"); err != nil {
+		t.Fatalf("SetTheme: %v", err)
+	}
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Theme != "light" {
+		t.Errorf("Theme = %q, want light", cfg.Theme)
+	}
+	if cfg.Hooks["on_start"] != "echo theme = 1" {
+		t.Errorf("hook was corrupted: %q", cfg.Hooks["on_start"])
+	}
+}

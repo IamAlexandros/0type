@@ -40,28 +40,58 @@ func WritePIDFile() (cleanup func(), err error) {
 }
 
 // Send reads the running instance's PID from the pidfile and sends it
-// SIGUSR1, asking it to toggle visibility.
-func Send() error {
-	path, err := pidFilePath()
+// SIGUSR1, asking it to toggle dictation.
+func Send() error { return send(syscall.SIGUSR1) }
+
+// SendMenu asks the running instance to open its menu (SIGUSR2). This is
+// what a second `0type` does instead of starting a whole second copy:
+// the model takes seconds to load and hundreds of megabytes to hold, so
+// there must only ever be one instance, and the natural meaning of
+// running the command again is "show me the program".
+func SendMenu() error { return send(syscall.SIGUSR2) }
+
+func send(sig syscall.Signal) error {
+	pid, err := RunningPID()
 	if err != nil {
 		return err
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("toggle: no running instance found (is 0type running?): %w", err)
-	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil {
-		return fmt.Errorf("toggle: invalid pidfile contents %q: %w", data, err)
 	}
 	proc, err := os.FindProcess(pid)
 	if err != nil {
 		return fmt.Errorf("toggle: find process %d: %w", pid, err)
 	}
-	if err := proc.Signal(syscall.SIGUSR1); err != nil {
+	if err := proc.Signal(sig); err != nil {
 		return fmt.Errorf("toggle: signal pid %d: %w (stale pidfile? try restarting 0type)", pid, err)
 	}
 	return nil
+}
+
+// RunningPID returns the PID of the running 0type instance, or an error
+// if there isn't one. A pidfile left behind by a crashed instance is
+// reported as "not running" rather than as a live process: signalling a
+// PID that has since been reused by something else would be worse than
+// starting a second copy.
+func RunningPID() (int, error) {
+	path, err := pidFilePath()
+	if err != nil {
+		return 0, err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, fmt.Errorf("toggle: no running instance found (is 0type running?): %w", err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		return 0, fmt.Errorf("toggle: invalid pidfile contents %q: %w", data, err)
+	}
+	// Signal 0 checks the process exists and is ours without disturbing it.
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return 0, fmt.Errorf("toggle: find process %d: %w", pid, err)
+	}
+	if err := proc.Signal(syscall.Signal(0)); err != nil {
+		return 0, fmt.Errorf("toggle: no running instance (stale pidfile for pid %d): %w", pid, err)
+	}
+	return pid, nil
 }
 
 // toggleChanBuffer gives the signal channel room for a few rapid presses
@@ -78,9 +108,14 @@ const toggleChanBuffer = 8
 
 // OnToggle installs a signal handler that calls handler once for every
 // SIGUSR1 the process receives, for the life of the program.
-func OnToggle(handler func()) {
+func OnToggle(handler func()) { on(syscall.SIGUSR1, handler) }
+
+// OnMenu does the same for SIGUSR2, which asks for the menu.
+func OnMenu(handler func()) { on(syscall.SIGUSR2, handler) }
+
+func on(sig syscall.Signal, handler func()) {
 	ch := make(chan os.Signal, toggleChanBuffer)
-	signal.Notify(ch, syscall.SIGUSR1)
+	signal.Notify(ch, sig)
 	go func() {
 		for range ch {
 			handler()

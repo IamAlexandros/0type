@@ -125,3 +125,61 @@ func sortedKeys(m map[string]bool) []string {
 	sort.Strings(out)
 	return out
 }
+
+// SetTheme persists a theme choice to the config file, creating it if
+// necessary. It rewrites only the `theme` line, leaving comments and
+// every other setting exactly as the user wrote them -- a settings menu
+// that reformatted the file, or dropped the comments explaining someone's
+// own hooks, would make the menu something you'd avoid using.
+func SetTheme(name string) error {
+	path, err := Path()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("config: create config dir: %w", err)
+	}
+
+	existing, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("config: read %s: %w", path, err)
+	}
+
+	updated := replaceThemeLine(string(existing), name)
+	if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
+		return fmt.Errorf("config: write %s: %w", path, err)
+	}
+	return nil
+}
+
+// replaceThemeLine returns content with its top-level `theme = "..."`
+// assignment set to name, adding one if there wasn't one. Only the
+// top-level key is touched: a line inside a [section] is a different key
+// that happens to share a name.
+func replaceThemeLine(content, name string) string {
+	assignment := fmt.Sprintf("theme = %q", name)
+
+	lines := strings.Split(content, "\n")
+	inSection := false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(stripComment(line))
+		if strings.HasPrefix(trimmed, "[") {
+			inSection = true
+			continue
+		}
+		if inSection {
+			continue
+		}
+		if key, _, ok := strings.Cut(trimmed, "="); ok && strings.TrimSpace(key) == "theme" {
+			lines[i] = assignment
+			return strings.Join(lines, "\n")
+		}
+	}
+
+	if content == "" {
+		return assignment + "\n"
+	}
+	// No theme line: put one at the top, before any [section] would
+	// capture it.
+	return assignment + "\n" + content
+}

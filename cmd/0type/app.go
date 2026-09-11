@@ -35,6 +35,13 @@ func runApp(args []string) error {
 		return err
 	}
 
+	// A second `0type` must not load a second copy of the model (seconds
+	// of startup, hundreds of MB); it asks the instance that's already
+	// running to show its menu instead.
+	if err := toggle.SendMenu(); err == nil {
+		return nil
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -78,8 +85,14 @@ func runApp(args []string) error {
 	}
 	defer cleanupPIDFile()
 
-	a := &app{win: win, model: model, hooks: hooks}
+	a := &app{win: win, model: model, hooks: hooks, themeName: th.Name}
 	toggle.OnToggle(a.handleToggle)
+	toggle.OnMenu(func() { ui.RunOnMainThread(a.openMenu) })
+
+	// Running `0type` with nothing else going on opens the menu, so the
+	// program is discoverable without knowing any of its subcommands or
+	// having set up a keybinding yet.
+	ui.RunOnMainThread(a.openMenu)
 
 	win.Run() // blocks until SIGINT/SIGTERM
 	a.stopPipeline()
@@ -118,6 +131,12 @@ type app struct {
 	model *asr.Model
 	hooks *plugin.Runner // nil when no hooks are configured; safe to call
 
+	// menu and themeName are only touched on the GTK main thread (see
+	// menuState), unlike the dictation fields below, which are shared with
+	// the capture goroutine and guarded by mu.
+	menu      menuState
+	themeName string
+
 	mu       sync.Mutex
 	visible  bool
 	stop     chan struct{}
@@ -133,6 +152,14 @@ type app struct {
 
 func (a *app) handleToggle() {
 	ui.RunOnMainThread(func() {
+		// The toggle key means "dictate" even when the menu is up -- it's
+		// the shortcut people reach for, and making it a no-op because a
+		// menu happens to be open would feel broken.
+		if a.menu.open {
+			a.closeMenu()
+			a.showAndListen()
+			return
+		}
 		a.mu.Lock()
 		show := !a.visible
 		a.mu.Unlock()
@@ -211,6 +238,13 @@ func (a *app) hideAndStop() {
 			a.win.Hide()
 		})
 	})
+}
+
+// isVisible reports whether a dictation session is on screen.
+func (a *app) isVisible() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.visible
 }
 
 // stopPipeline is called once on shutdown, after the GTK main loop

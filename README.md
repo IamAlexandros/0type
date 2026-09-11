@@ -34,11 +34,16 @@ make build
 
 ## Use
 
-Start it once; it stays running and hidden until you ask for it:
+Run it:
 
 ```sh
 0type
 ```
+
+A menu appears in the middle of the screen: **Start dictation**, **Theme**,
+**Quit**. Drive it with ↑/↓, Enter, and Esc. 0type stays running in the
+background afterwards, so running `0type` again just brings the menu back
+rather than loading the model a second time.
 
 Then bind a key to `0type toggle` — on GNOME: *Settings → Keyboard →
 Keyboard Shortcuts → Custom Shortcuts*, with the command set to the full
@@ -49,7 +54,7 @@ text is on your clipboard, ready to paste.
 
 | Command | What it does |
 | --- | --- |
-| `0type` | run the overlay (add `--theme NAME` to override the config) |
+| `0type` | open the menu (add `--theme NAME` to override the config) |
 | `0type toggle` | show/hide the running overlay — bind this to a key |
 | `0type setup` | download the speech model |
 | `0type themes` | list available themes |
@@ -78,6 +83,10 @@ that fails or hangs is logged and killed. The hooks are `on_start`,
 
 Four are built in: `default` (dark, glassy), `light`, `mono` (grayscale),
 and `term` (a terminal, with an 8-bit mic).
+
+The quickest way to switch is the menu: run `0type`, pick **Theme**, and
+arrow through the list — each one applies live as you move, Enter keeps it
+(saved to your config), Esc puts back the one you started with.
 
 Themes are plain GTK CSS. To write one, copy a built-in from `themes/` in
 the tarball (or `internal/theme/themes/` in the source) to

@@ -570,3 +570,96 @@ Result: 9.7MB.
 Verified end-to-end rather than assumed: extract to a temp prefix, run
 `install.sh`, execute the symlink from `/`, and confirm via
 `/proc/<pid>/maps` that the *bundled* library is the one mapped.
+
+## The menu (running `0type` with no arguments)
+
+Running `0type` opens a menu in the middle of the screen — Start
+dictation, Theme, Quit — driven with the arrow keys. The dictation bar
+still lives at the bottom of the screen; the menu is centered, because
+one is meant to stay out of the way of what you're typing into and the
+other is the thing you're looking at.
+
+It's the same window and the same drawing area, in a different mode, not
+a second window: the panel's position, intro/outro animation, theming and
+override-redirect setup are all attached to this one window, and a
+separate menu window would have to reimplement every one of them to look
+like it belonged to the same program.
+
+### Getting keyboard input at all
+
+This was the risky unknown, and worth probing before building anything on
+top of it: an override-redirect window is invisible to the window manager
+by design (that's what keeps the overlay out of the taskbar and
+alt-tab), and the flip side is that nothing ever gives it keyboard focus.
+
+Three things each had to be right, and each failed first:
+
+1. **`XSetInputFocus` alone doesn't work**, because Mutter decides which
+   X client holds focus and has no reason to pick a window it isn't
+   managing. An `XGrabKeyboard` takes the keyboard regardless — the same
+   thing every X11 popup menu does.
+2. **Calling it too early is fatal.** `XSetInputFocus` on a window that
+   isn't viewable yet is a `BadMatch`, and GDK's default X error handler
+   turns that into an immediate exit. The window isn't viewable for the
+   first frames after Show, which is exactly when a menu wants the
+   keyboard, so the grab checks `map_state` first and the caller retries
+   for a short while.
+3. **GTK dropped the events anyway**, because a key controller defaults
+   to the bubble phase, which propagates up from the focused widget — and
+   this window deliberately contains nothing focusable. Installing the
+   controller in the *capture* phase (top-down from the toplevel) needs
+   no focus widget.
+
+A grab can still legitimately fail if something else holds one (another
+popup, a system dialog — a GNOME permission prompt did exactly this
+during development). The menu closes itself in that case rather than
+sitting there undismissable, and the grab is released whenever the window
+hides.
+
+Note for testing: don't verify this with `xdotool key`. Injecting
+synthetic input via XTEST makes GNOME prompt for remote-desktop
+permission, and while that prompt is up it holds a keyboard grab — which
+both blocks the keys you were trying to send and makes 0type's own grab
+fail. Press the keys by hand.
+
+### Resizing the window between modes
+
+The menu is taller than the bar, and simply growing the `GtkDrawingArea`
+was not enough: the extra rows drew *outside* the panel's background,
+past the bottom of the window. GTK settles a toplevel's size when the
+surface is realized -- which `prepare_overlay` does at startup, while the
+panel still holds a one-line bar -- and won't renegotiate it afterwards.
+`gtk_window_set_default_size` doesn't move an already-realized window
+either.
+
+What works: measure the panel (`gtk_widget_measure` includes its CSS
+margin, border and padding), then `XResizeWindow` the surface directly,
+scaled by `gdk_surface_get_scale_factor`. GDK picks the new size up from
+the resulting ConfigureNotify and GTK reallocates the panel to match.
+That's consistent with how this window is handled everywhere else --
+its position is already driven in raw X11 coordinates for the same
+reason.
+
+### Live theme preview
+
+Selecting a theme in the menu applies it immediately, which turned up a
+latent bug: `load_css` used to add a *new* `GtkCssProvider` on every
+call, so stylesheets stacked. The newest wins wherever two themes set the
+same property, but anything the old theme set and the new one doesn't
+would linger forever. Invisible when the theme is only loaded once at
+startup; immediately visible when switching live. There is now one
+provider, reloaded in place.
+
+Backing out of the theme list with Esc restores the theme that was active
+when it was opened -- browsing shouldn't silently change your setup --
+and Enter writes the choice to the config file, rewriting only the
+`theme` line so comments and hooks survive (`config.SetTheme`).
+
+### One instance
+
+Running `0type` while it's already running sends SIGUSR2 to the existing
+process (which shows the menu) and exits, rather than starting a second
+copy: the model takes seconds to load and hundreds of MB to hold. A
+pidfile left behind by a crashed instance is treated as "not running" --
+signalling a PID that has since been reused by something else would be
+worse than starting a second copy.
