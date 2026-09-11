@@ -1,20 +1,23 @@
-/* 0type default theme: dark, glassy, glowy -- a slim floating pill near
- * the bottom of the screen, Raycast-style.
+/* 0type default theme -- Raycast-style: a slim, dark, glassy pill near
+ * the bottom of the screen. Sleek means restraint: depth comes from a
+ * deep soft shadow and a 1px inner highlight along the top edge (the
+ * "glass" rim), not from a colored glow ring. The accent survives only
+ * as a faint wash under the panel and as the "0" in the idle wordmark.
  *
- * Palette (keep it to these; the glow, the idle wordmark's accent "0",
- * and anything else tinted all share the one periwinkle accent):
- *   background  #101016 @ .94
- *   hairline    white @ .08         (neutral -- a tinted border read muddy)
- *   accent      #7A8CFF             (glow, wordmark "0")
- *   text        #ECEDF5 @ .96
- *   muted       #80849A             (idle wordmark, set in internal/ui)
- *   success     #8ADBAE             (the "Copied" confirmation)
+ * Palette (keep to these):
+ *   background  #1A1A21 @ .90   a notch above black so the panel still
+ *                               separates from dark windows behind it
+ *   hairline    white @ .07     outer border
+ *   rim         white @ .06     inset top highlight
+ *   accent      #7A8CFF         faint wash below, wordmark "0"
+ *   text        #ECEDF5 @ .95
+ *   muted       #80849A         idle wordmark (set in internal/ui)
+ *   success     #8ADBAE         "Copied" confirmation (set in internal/ui)
  *
  * #zt-panel is inset from the window edge via `margin`: GTK clips
- * box-shadow hard at the window's own boundary, so a glow with nothing
- * between it and that edge gets cut off flat. (GTK CSS also has no
- * backdrop-blur, so "glassy" here is a translucent dark fill plus a
- * layered glow rather than true blur-behind.) */
+ * box-shadow hard at the window's own boundary, so a shadow with nothing
+ * between it and that edge gets cut off flat. (GTK CSS has no
+ * backdrop-blur, so "glassy" is translucency + the rim highlight.) */
 
 window {
   background-color: transparent;
@@ -22,23 +25,25 @@ window {
 
 #zt-panel {
   margin: 44px;
-  background-color: rgba(16, 16, 22, 0.94);
+  background-color: rgba(26, 26, 33, 0.90);
   /* A true pill: radius >= half the panel's height (viewport 30px +
    * padding 2x10px = 50px tall). */
   border-radius: 26px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.07);
   box-shadow:
-    0 0 18px rgba(122, 140, 255, 0.34),
-    0 0 44px rgba(122, 140, 255, 0.18),
-    0 6px 20px rgba(0, 0, 0, 0.5);
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 1px 2px rgba(0, 0, 0, 0.35),
+    0 10px 30px rgba(0, 0, 0, 0.55),
+    0 24px 60px rgba(0, 0, 0, 0.35),
+    0 0 36px rgba(122, 140, 255, 0.10);
   padding: 10px 22px;
   min-width: 240px;
 }
 
 #zt-label {
-  color: rgba(236, 237, 245, 0.96);
+  color: rgba(236, 237, 245, 0.95);
   font-family: "Inter", "SF Pro Display", -apple-system, "Segoe UI", Cantarell, "Noto Sans", sans-serif;
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.1px;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0;
 }
