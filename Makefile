@@ -31,7 +31,7 @@ toolcheck:
 # pkg-config before any code that depends on them is written.
 pkgcheck:
 	pkg-config --exists gtk4 && echo "gtk4: OK ($$(pkg-config --modversion gtk4))"
-	pkg-config --exists gtk4-layer-shell-0 && echo "gtk4-layer-shell-0: OK ($$(pkg-config --modversion gtk4-layer-shell-0))"
+	pkg-config --exists x11 && echo "x11: OK ($$(pkg-config --modversion x11))"
 	pkg-config --exists alsa && echo "alsa: OK ($$(pkg-config --modversion alsa))"
 
 clean:

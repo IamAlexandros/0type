@@ -32,6 +32,8 @@ func run(args []string) error {
 		return runSetup(args[1:])
 	case "listen":
 		return runListen(args[1:])
+	case "ui":
+		return runUI(args[1:])
 	default:
 		return fmt.Errorf("unknown subcommand %q", args[0])
 	}

@@ -1,0 +1,24 @@
+/* 0type default theme: dark, glassy, glowy -- a small floating panel in
+ * the Raycast style. GTK CSS has no backdrop-blur, so "glassy" here means
+ * a translucent dark fill plus a soft outer glow rather than true blur. */
+
+window {
+  background-color: transparent;
+}
+
+#zt-panel {
+  background-color: rgba(18, 18, 26, 0.82);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow:
+    0 0 40px rgba(94, 129, 255, 0.28),
+    0 10px 30px rgba(0, 0, 0, 0.55);
+  padding: 22px 30px;
+  min-width: 420px;
+}
+
+#zt-label {
+  color: rgba(235, 236, 245, 0.95);
+  font-size: 16px;
+  font-weight: 450;
+}
