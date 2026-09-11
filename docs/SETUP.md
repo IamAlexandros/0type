@@ -401,3 +401,30 @@ system ONNX Runtime package, the Go module can likely be upgraded to match
 considering against `pkg-config --modversion onnxruntime` — or, since
 `onnxruntime_go` dlopens the library at runtime, just the `.so`'s own
 version).
+
+## The bar layout (idle state rethink)
+
+Centering a wordmark in an empty pill read as a splash screen, not a
+tool, however it was set (plain, bold, tracked caps, display font -- all
+tried). The bar is now laid out like Raycast's, with three regions that
+stay put in every state (`internal/ui/window.go`, `slide_draw` and the
+`draw_mark` / `draw_content` / `draw_bars` helpers):
+
+- **Left, brand mark:** the "0" in a small rounded tile -- an icon-sized
+  mark, in Adwaita Mono because its dotted zero reads as a *digit* (the
+  name is a pun on zero; proportional faces draw an oval that reads as
+  "O"). Turns into a green check during the "Copied" confirmation.
+- **Center, content area:** muted "Listening…" placeholder while idle;
+  the sliding transcript (centered until it overflows, then right-pinned,
+  with a short left-edge fade) while dictating; "Copied to clipboard" at
+  the end. Clipped to its own region so text never runs under the mark
+  or the meter.
+- **Right, level meter:** three thin bars driven by the *real* mic level
+  (`Window.SetLevel`, fed per chunk from `runPipeline`, eased per frame in
+  `slide_tick`). A live affordance that it's listening, not a decorative
+  pulse.
+
+Theme is Raycast-restrained (`themes/default.css`): a lifted near-black
+translucent pill, neutral hairline, 1px inset top highlight for the glass
+rim, depth from a layered black shadow rather than a colored glow; the
+periwinkle accent survives only as a faint wash and the mark's "0".

@@ -59,18 +59,23 @@ static GtkWidget *new_box_vertical(void) {
 	return gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
 }
 
-// SlideState is the transcript display. It's a GtkDrawingArea, not a
-// GtkLabel -- deliberately: every attempt to get a fixed-size *container*
-// (GtkFixed, then GtkScrolledWindow) to hold a growing label without its
-// own reported size leaking the label's length up into the rest of the
-// panel ran into some variant of the same trap (a child's minimum/natural
-// size bubbling through regardless of size_request or propagate-natural
-// settings). A GtkDrawingArea sidesteps the whole problem: its size is
-// simply whatever gtk_drawing_area_set_content_width/height says, always,
-// because it has no children for anything to leak from -- text is painted
-// directly with Cairo/Pango in slide_draw, at whatever x offset
-// slide_tick's animation currently computes. Text is never wrapped or
-// ellipsized; the drawing area's own bounds are what hide the overflow.
+// SlideState is the whole content of the bar: a GtkDrawingArea (not a
+// GtkLabel -- every attempt to get a fixed-size GTK *container* to hold a
+// growing label without its natural size leaking into the panel hit the
+// same "size_request is a floor, not a ceiling" trap; a drawing area has
+// no children for anything to leak from) painted entirely with
+// Cairo/Pango in slide_draw as three regions that stay put across every
+// state, Raycast-bar style:
+//
+//   [ brand mark ]  [ ........ content area ........ ]  [ level bars ]
+//
+// The mark is the product's "0" in a small rounded tile -- an icon, not a
+// centered wordmark: a lone word in an empty pill read as a splash
+// screen, not a tool. The content area shows a muted placeholder while
+// idle, the sliding transcript while dictating, and the "Copied" message
+// at the end. The bars are a live meter of the actual mic level (fed by
+// Window.SetLevel from the capture pipeline), so the bar visibly reacts
+// to speech without any decorative pulsing.
 typedef struct {
 	GtkWidget *area;
 	char *text;
@@ -79,126 +84,154 @@ typedef struct {
 	gint64 last_time;
 	gboolean started;
 	gboolean confirmation; // TRUE while showing "Copied" rather than idle/transcript text
+	double level_target;   // 0..1, from the capture pipeline
+	double level_current;  // eased toward level_target each frame (slide_tick)
 } SlideState;
 
-// IDLE_TEXT is shown in place of the transcript before any speech has
-// been recognized. The name is a pun on *zero* ("0type" = zero typing),
-// and that only lands if the 0 reads as a digit -- in Cantarell and
-// Montserrat (both tried) the zero is a plain oval, so the whole thing
-// read as "Otype": just a gray word in a pill, however it was weighted or
-// tracked. Adwaita Mono has a dotted zero, so the mark reads correctly,
-// and a monospace face gives it the developer-tool character the rest of
-// the overlay (dark, glowy, Raycast-like) is going for. The "0" is picked
-// out in the same accent the panel's glow uses (see slide_draw_idle), the
-// rest in a muted gray close to the panel background, so it sits quietly
-// until real content replaces it.
-#define IDLE_TEXT "0type"
-#define IDLE_FONT_FAMILY "Adwaita Mono"
-static const int idle_font_size_pt = 17;
+// Geometry of the three regions, in the drawing area's logical pixels.
+#define MARK_SIZE   22.0
+#define MARK_RADIUS  6.0
+#define MARK_GAP    12.0
+#define BAR_COUNT    3
+#define BAR_W        3.0
+#define BAR_GAP      3.0
+#define BARS_GAP    12.0
+#define BARS_W      (BAR_COUNT * BAR_W + (BAR_COUNT - 1) * BAR_GAP)
+#define CONTENT_X   (MARK_SIZE + MARK_GAP)
+#define CONTENT_W(width) ((width) - CONTENT_X - BARS_GAP - BARS_W)
 
-static void slide_draw_idle(GtkWidget *area, cairo_t *cr, int width, int height) {
-	PangoLayout *layout = gtk_widget_create_pango_layout(area, IDLE_TEXT);
-	pango_layout_set_single_paragraph_mode(layout, TRUE);
+// The mark must read as a *digit* -- the name is a pun on zero -- so it
+// uses Adwaita Mono's dotted zero; in a proportional UI face the "0" is a
+// plain oval and reads as the letter O.
+#define MARK_GLYPH       "0"
+#define MARK_FONT_FAMILY "Adwaita Mono"
+#define MARK_FONT_PT     13
+#define IDLE_TEXT        "Listening…"
+#define FADE_W           40.0
 
-	PangoFontDescription *desc = pango_font_description_new();
-	pango_font_description_set_family(desc, IDLE_FONT_FAMILY);
-	pango_font_description_set_size(desc, idle_font_size_pt * PANGO_SCALE);
-	pango_font_description_set_weight(desc, PANGO_WEIGHT_NORMAL);
-	pango_layout_set_font_description(layout, desc);
-	pango_font_description_free(desc);
+static void rounded_rect(cairo_t *cr, double x, double y, double w, double h, double r) {
+	cairo_new_sub_path(cr);
+	cairo_arc(cr, x + w - r, y + r, r, -G_PI / 2, 0);
+	cairo_arc(cr, x + w - r, y + h - r, r, 0, G_PI / 2);
+	cairo_arc(cr, x + r, y + h - r, r, G_PI / 2, G_PI);
+	cairo_arc(cr, x + r, y + r, r, G_PI, 3 * G_PI / 2);
+	cairo_close_path(cr);
+}
 
-	// Two-tone: the leading "0" in the accent (pango_cairo honors
-	// per-range foreground attributes over the cairo source), the rest in
-	// the muted gray set as the cairo source below.
-	PangoAttrList *attrs = pango_attr_list_new();
-	PangoAttribute *zero = pango_attr_foreground_new(0x8C00, 0x9E00, 0xFF00);
-	zero->start_index = 0;
-	zero->end_index = 1;
-	pango_attr_list_insert(attrs, zero);
-	PangoAttribute *zero_alpha = pango_attr_foreground_alpha_new(0xD000);
-	zero_alpha->start_index = 0;
-	zero_alpha->end_index = 1;
-	pango_attr_list_insert(attrs, zero_alpha);
-	pango_layout_set_attributes(layout, attrs);
-	pango_attr_list_unref(attrs);
+// draw_mark paints the brand tile at the left edge: a subtle rounded
+// square holding the accent "0" -- or, during the confirmation, a green
+// check, so the whole bar reads as "done" at a glance.
+static void draw_mark(GtkWidget *area, cairo_t *cr, int height, gboolean confirmed) {
+	double y = (height - MARK_SIZE) / 2.0;
+	if (confirmed) {
+		cairo_set_source_rgba(cr, 0.54, 0.86, 0.68, 0.18);
+	} else {
+		cairo_set_source_rgba(cr, 1, 1, 1, 0.06);
+	}
+	rounded_rect(cr, 0.5, y + 0.5, MARK_SIZE - 1, MARK_SIZE - 1, MARK_RADIUS);
+	cairo_fill_preserve(cr);
+	cairo_set_source_rgba(cr, 1, 1, 1, 0.08);
+	cairo_set_line_width(cr, 1.0);
+	cairo_stroke(cr);
 
-	int text_w, text_h;
-	pango_layout_get_pixel_size(layout, &text_w, &text_h);
-
-	cairo_set_source_rgba(cr, 0.50, 0.52, 0.60, 0.9);
-	cairo_move_to(cr, (width - text_w) / 2.0, (height - text_h) / 2.0);
+	PangoLayout *layout = gtk_widget_create_pango_layout(area, confirmed ? "✓" : MARK_GLYPH);
+	if (!confirmed) {
+		PangoFontDescription *desc = pango_font_description_new();
+		pango_font_description_set_family(desc, MARK_FONT_FAMILY);
+		pango_font_description_set_size(desc, MARK_FONT_PT * PANGO_SCALE);
+		pango_font_description_set_weight(desc, PANGO_WEIGHT_MEDIUM);
+		pango_layout_set_font_description(layout, desc);
+		pango_font_description_free(desc);
+	}
+	int tw, th;
+	pango_layout_get_pixel_size(layout, &tw, &th);
+	if (confirmed) {
+		cairo_set_source_rgba(cr, 0.54, 0.86, 0.68, 0.95);
+	} else {
+		cairo_set_source_rgba(cr, 0.55, 0.62, 1.0, 0.92);
+	}
+	cairo_move_to(cr, (MARK_SIZE - tw) / 2.0, y + (MARK_SIZE - th) / 2.0);
 	pango_cairo_show_layout(cr, layout);
-
 	g_object_unref(layout);
 }
 
-// slide_draw_text paints the sliding transcript text with a subtle
-// left-edge fade to gray: a horizontal gradient that's a muted gray for
-// roughly the first sixth of the box, sharpening to the normal (CSS
-// -resolved) text color from there to the right edge. Since older words
-// are the ones sitting toward the left as the line slides (see
-// slide_retarget), this reads as those words quietly fading into the
-// past rather than being cut off by a hard clip edge.
-static void slide_draw_text(GtkWidget *area, cairo_t *cr, int width, int height, SlideState *s) {
-	PangoLayout *layout = gtk_widget_create_pango_layout(area, s->text);
-	pango_layout_set_single_paragraph_mode(layout, TRUE);
-
-	int text_h;
-	pango_layout_get_pixel_size(layout, NULL, &text_h);
-
-	GdkRGBA color;
-	gtk_widget_get_color(area, &color);
-
-	cairo_pattern_t *gradient = cairo_pattern_create_linear(0, 0, width, 0);
-	cairo_pattern_add_color_stop_rgba(gradient, 0.0, 0.50, 0.50, 0.54, color.alpha * 0.55);
-	cairo_pattern_add_color_stop_rgba(gradient, 0.16, color.red, color.green, color.blue, color.alpha);
-	cairo_pattern_add_color_stop_rgba(gradient, 1.0, color.red, color.green, color.blue, color.alpha);
-	cairo_set_source(cr, gradient);
-
-	cairo_move_to(cr, s->current_x, (height - text_h) / 2.0);
-	pango_cairo_show_layout(cr, layout);
-
-	cairo_pattern_destroy(gradient);
-	g_object_unref(layout);
+// draw_bars paints the live level meter at the right edge: three thin
+// bars whose heights follow the (eased) mic level. Muted, so it's an
+// affordance that the bar is listening, not a feature.
+static void draw_bars(cairo_t *cr, int width, int height, double level) {
+	const double min_h = 6.0, max_h = 16.0;
+	// The middle bar leads and the outer two lag slightly, so it reads as
+	// a signal rather than three identical sliders.
+	const double scale[BAR_COUNT] = {0.7, 1.0, 0.85};
+	double x0 = width - BARS_W;
+	for (int i = 0; i < BAR_COUNT; i++) {
+		double h = min_h + (max_h - min_h) * level * scale[i];
+		double x = x0 + i * (BAR_W + BAR_GAP);
+		double y = (height - h) / 2.0;
+		cairo_set_source_rgba(cr, 1, 1, 1, 0.22 + 0.35 * level);
+		rounded_rect(cr, x, y, BAR_W, h, BAR_W / 2.0);
+		cairo_fill(cr);
+	}
 }
 
-// slide_draw_confirmation paints the brief "copied to clipboard"
-// confirmation shown once a session with something to copy ends (see
-// slide_show_confirmation / Window.ShowCopiedConfirmation): centered,
-// solid (no gradient -- this isn't sliding, it's a short-lived status
-// message), in a soft accent green rather than the transcript's neutral
-// color, so it visibly reads as "success" against the dark panel.
-static void slide_draw_confirmation(GtkWidget *area, cairo_t *cr, int width, int height, const char *text) {
+// draw_content paints whatever belongs between the mark and the bars,
+// clipped to that area so sliding text never runs under either: the
+// muted idle placeholder, the transcript (with a short fade-to-gray at
+// its left edge, so words sliding out read as receding rather than being
+// cut off), or the confirmation message.
+static void draw_content(GtkWidget *area, cairo_t *cr, int width, int height, SlideState *s) {
+	double cw = CONTENT_W(width);
+	cairo_save(cr);
+	cairo_rectangle(cr, CONTENT_X, 0, cw, height);
+	cairo_clip(cr);
+
+	gboolean idle = (s->text == NULL || s->text[0] == '\0');
+	const char *text = idle ? IDLE_TEXT : s->text;
 	PangoLayout *layout = gtk_widget_create_pango_layout(area, text);
 	pango_layout_set_single_paragraph_mode(layout, TRUE);
+	if (idle) {
+		PangoFontDescription *desc = pango_font_description_copy(pango_context_get_font_description(gtk_widget_get_pango_context(area)));
+		pango_font_description_set_weight(desc, PANGO_WEIGHT_NORMAL);
+		pango_layout_set_font_description(layout, desc);
+		pango_font_description_free(desc);
+	}
+	int tw, th;
+	pango_layout_get_pixel_size(layout, &tw, &th);
+	double y = (height - th) / 2.0;
 
-	int text_w, text_h;
-	pango_layout_get_pixel_size(layout, &text_w, &text_h);
-
-	cairo_set_source_rgba(cr, 0.55, 0.86, 0.68, 0.95);
-	cairo_move_to(cr, (width - text_w) / 2.0, (height - text_h) / 2.0);
+	if (idle) {
+		cairo_set_source_rgba(cr, 0.50, 0.52, 0.60, 0.85);
+		cairo_move_to(cr, CONTENT_X + (cw - tw) / 2.0, y);
+	} else if (s->confirmation) {
+		cairo_set_source_rgba(cr, 0.54, 0.86, 0.68, 0.95);
+		cairo_move_to(cr, CONTENT_X + (cw - tw) / 2.0, y);
+	} else {
+		GdkRGBA color;
+		gtk_widget_get_color(area, &color);
+		cairo_pattern_t *g = cairo_pattern_create_linear(CONTENT_X, 0, CONTENT_X + FADE_W, 0);
+		cairo_pattern_add_color_stop_rgba(g, 0.0, 0.50, 0.50, 0.54, color.alpha * 0.45);
+		cairo_pattern_add_color_stop_rgba(g, 1.0, color.red, color.green, color.blue, color.alpha);
+		cairo_set_source(cr, g);
+		cairo_pattern_destroy(g); // cairo_set_source holds its own reference
+		cairo_move_to(cr, s->current_x, y);
+	}
 	pango_cairo_show_layout(cr, layout);
-
 	g_object_unref(layout);
+	cairo_restore(cr);
 }
 
 static void slide_draw(GtkDrawingArea *area, cairo_t *cr, int width, int height, gpointer data) {
 	SlideState *s = (SlideState *)data;
-	if (s->confirmation && s->text != NULL) {
-		slide_draw_confirmation(GTK_WIDGET(area), cr, width, height, s->text);
-	} else if (s->text == NULL || s->text[0] == '\0') {
-		slide_draw_idle(GTK_WIDGET(area), cr, width, height);
-	} else {
-		slide_draw_text(GTK_WIDGET(area), cr, width, height, s);
-	}
+	draw_content(GTK_WIDGET(area), cr, width, height, s);
+	draw_mark(GTK_WIDGET(area), cr, height, s->confirmation);
+	draw_bars(cr, width, height, s->level_current);
 }
 
-// slide_tick advances current_x toward target_x by a fraction of the
-// remaining distance each frame, scaled by actual elapsed time (not an
-// assumed frame rate) via a simple exponential ease -- this is what makes
-// the motion genuinely smooth (frame-clock synced, not an instant snap)
-// and automatically continuous even if target_x changes again before the
-// previous move finishes (see slide_retarget).
+// slide_tick eases current_x toward target_x (and the level meter toward
+// its target) by a fraction of the remaining distance each frame, scaled
+// by actual elapsed time via a simple exponential ease -- genuinely
+// smooth, frame-clock synced, and automatically continuous if the target
+// changes again before a previous move finishes.
 static gboolean slide_tick(GtkWidget *widget, GdkFrameClock *clock, gpointer data) {
 	SlideState *s = (SlideState *)data;
 
@@ -218,17 +251,17 @@ static gboolean slide_tick(GtkWidget *widget, GdkFrameClock *clock, gpointer dat
 	if (fabs(diff) < 0.25) {
 		s->current_x = s->target_x;
 	} else {
-		const double tau = 0.11; // seconds; smaller = snappier, larger = lazier
-		double factor = 1.0 - exp(-dt / tau);
-		s->current_x += diff * factor;
+		s->current_x += diff * (1.0 - exp(-dt / 0.11)); // tau 110ms: snappy but not abrupt
 	}
+	s->level_current += (s->level_target - s->level_current) * (1.0 - exp(-dt / 0.06));
+
 	gtk_widget_queue_draw(s->area);
 	return G_SOURCE_CONTINUE;
 }
 
-// new_slide_area creates the fixed-size transcript display and its
-// animation state together, and starts the per-frame tick callback that
-// drives it for the window's lifetime.
+// new_slide_area creates the fixed-size bar content and its animation
+// state together, and starts the per-frame tick callback that drives it
+// for the window's lifetime.
 static SlideState *new_slide_area(int width, int height) {
 	GtkWidget *area = gtk_drawing_area_new();
 	gtk_drawing_area_set_content_width(GTK_DRAWING_AREA(area), width);
@@ -241,12 +274,11 @@ static SlideState *new_slide_area(int width, int height) {
 	return s;
 }
 
-// slide_retarget sets the text to display and recomputes where it should
-// sit: centered while it fits within viewport_width, otherwise
-// right-aligned so the newest (rightmost) text stays in view and older
-// text slides off the left edge, clipped by the drawing area's own
-// bounds. The very first call snaps instead of animating in, so the
-// initial text doesn't slide in from nowhere.
+// slide_retarget sets the transcript text and recomputes where it should
+// sit within the content area: centered while it fits, otherwise
+// right-aligned so the newest (rightmost) words stay in view and older
+// ones slide off the left edge, clipped by draw_content. The very first
+// call snaps instead of animating in.
 static void slide_retarget(SlideState *s, int viewport_width, const char *text) {
 	s->confirmation = FALSE;
 	g_free(s->text);
@@ -260,11 +292,12 @@ static void slide_retarget(SlideState *s, int viewport_width, const char *text) 
 		g_object_unref(layout);
 	}
 
+	double cw = CONTENT_W(viewport_width);
 	double target;
-	if (text_w <= viewport_width) {
-		target = (viewport_width - text_w) / 2.0;
+	if (text_w <= cw) {
+		target = CONTENT_X + (cw - text_w) / 2.0;
 	} else {
-		target = (double)(viewport_width - text_w);
+		target = CONTENT_X + cw - text_w;
 	}
 	s->target_x = target;
 
@@ -275,15 +308,24 @@ static void slide_retarget(SlideState *s, int viewport_width, const char *text) 
 	gtk_widget_queue_draw(s->area);
 }
 
-// slide_show_confirmation switches the display to the "copied" state
-// (see slide_draw_confirmation). Cleared the next time slide_retarget is
-// called -- Show() always calls it with "" first, so a fresh session
-// never starts still showing a stale confirmation from the last one.
+// slide_show_confirmation switches the bar to the "copied" state. Cleared
+// by the next slide_retarget -- Show() always calls it with "" first, so a
+// fresh session never starts still showing a stale confirmation.
 static void slide_show_confirmation(SlideState *s, const char *text) {
 	g_free(s->text);
 	s->text = g_strdup(text);
 	s->confirmation = TRUE;
+	s->level_target = 0;
 	gtk_widget_queue_draw(s->area);
+}
+
+static void slide_set_level(SlideState *s, double level) {
+	if (level < 0) {
+		level = 0;
+	} else if (level > 1) {
+		level = 1;
+	}
+	s->level_target = level;
 }
 
 static void box_append(GtkWidget *box, GtkWidget *child) {
@@ -566,7 +608,7 @@ const (
 	// enough for the bigger idle "0type" wordmark (see slide_draw_idle),
 	// not just the smaller transcript text -- both are vertically
 	// centered within whatever height this is.
-	viewportWidthPx  = 260
+	viewportWidthPx  = 300
 	viewportHeightPx = 30
 	// repositionDelayMs must exceed how long GTK takes to finish its
 	// first real layout pass after being shown; measured at ~well under
@@ -643,6 +685,13 @@ func SetClipboard(text string) {
 	withCString(text, func(c *C.char) { C.set_clipboard_text(c) })
 }
 
+// SetLevel feeds the bar's live level meter (0..1, from the capture
+// pipeline's per-chunk dBFS). Must be called from the GTK main thread --
+// use RunOnMainThread from any other goroutine.
+func (w *Window) SetLevel(level float64) {
+	C.slide_set_level(w.slide, C.double(level))
+}
+
 // ShowCopiedConfirmation replaces the display with a brief "copied"
 // status message (solid accent green, centered) in place of the
 // transcript, until the next SetText call (Show always makes one, with
@@ -650,7 +699,7 @@ func SetClipboard(text string) {
 // confirmation). Must be called from the GTK main thread -- use
 // RunOnMainThread from any other goroutine.
 func (w *Window) ShowCopiedConfirmation() {
-	withCString("✓ Copied to clipboard", func(c *C.char) { C.slide_show_confirmation(w.slide, c) })
+	withCString("Copied to clipboard", func(c *C.char) { C.slide_show_confirmation(w.slide, c) })
 }
 
 // Show makes the window visible and plays its intro animation (fade in

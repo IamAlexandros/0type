@@ -200,6 +200,8 @@ func (a *app) runPipeline(stop chan struct{}) {
 			return
 		}
 		db := audio.DBFS(audio.RMS(c.Samples))
+		level := (db + 60) / 50 // map -60..-10 dBFS onto 0..1 for the bar's live meter
+		ui.RunOnMainThread(func() { a.win.SetLevel(level) })
 		events, err := runner.Feed(audio.Int16ToFloat32(c.Samples), db)
 		if err != nil {
 			continue // transient decode error: keep listening, don't crash the session
