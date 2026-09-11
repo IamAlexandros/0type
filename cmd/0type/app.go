@@ -1,14 +1,19 @@
 package main
 
 import (
+	"flag"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
 	"github.com/zalkanorr/0type/internal/asr"
 	"github.com/zalkanorr/0type/internal/audio"
+	"github.com/zalkanorr/0type/internal/config"
 	"github.com/zalkanorr/0type/internal/modelstore"
+	"github.com/zalkanorr/0type/internal/plugin"
 	"github.com/zalkanorr/0type/internal/stream"
+	"github.com/zalkanorr/0type/internal/theme"
 	"github.com/zalkanorr/0type/internal/toggle"
 	"github.com/zalkanorr/0type/internal/ui"
 )
@@ -24,6 +29,28 @@ const copiedConfirmationHold = 850 * time.Millisecond
 // visibility -- starting/stopping live mic capture and transcription along
 // with it -- on SIGUSR1 (see internal/toggle and `0type toggle`).
 func runApp(args []string) error {
+	fs := flag.NewFlagSet("0type", flag.ContinueOnError)
+	themeFlag := fs.String("theme", "", "theme name or path to a .css file (overrides the config file)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	// Resolve the theme before loading the model: the model takes seconds,
+	// and a typo in a theme name should fail immediately rather than after
+	// the wait.
+	th, err := loadTheme(*themeFlag, cfg)
+	if err != nil {
+		return err
+	}
+	hooks, err := plugin.New(cfg.Hooks, plugin.WithLogger(log.Printf))
+	if err != nil {
+		return err
+	}
+
 	dir, err := modelstore.Dir(modelstore.ParakeetTDTv2.Name)
 	if err != nil {
 		return fmt.Errorf("resolve model cache dir: %w", err)
@@ -39,11 +66,11 @@ func runApp(args []string) error {
 	}
 	defer model.Close()
 
-	win, err := ui.New("") // idle: a pulsing dot until speech arrives, see internal/ui's slide_draw
+	win, err := ui.New("") // idle: the "Listening…" bar, see internal/ui's draw_content
 	if err != nil {
 		return fmt.Errorf("create window: %w", err)
 	}
-	win.LoadCSS("themes/default.css")
+	applyTheme(win, th)
 
 	cleanupPIDFile, err := toggle.WritePIDFile()
 	if err != nil {
@@ -51,12 +78,31 @@ func runApp(args []string) error {
 	}
 	defer cleanupPIDFile()
 
-	a := &app{win: win, model: model}
+	a := &app{win: win, model: model, hooks: hooks}
 	toggle.OnToggle(a.handleToggle)
 
 	win.Run() // blocks until SIGINT/SIGTERM
 	a.stopPipeline()
+	hooks.Wait() // let an in-flight hook finish rather than killing it at exit
 	return nil
+}
+
+// loadTheme resolves which stylesheet to use: the --theme flag if given,
+// otherwise the config file's, otherwise the default.
+func loadTheme(flagValue string, cfg *config.Config) (*theme.Theme, error) {
+	name := cfg.Theme
+	if flagValue != "" {
+		name = flagValue
+	}
+	return theme.Load(name)
+}
+
+// applyTheme puts a resolved theme on screen: its stylesheet, plus the
+// brand mark it selected (which is 0type's own directive rather than a
+// CSS property -- see internal/theme).
+func applyTheme(win *ui.Window, th *theme.Theme) {
+	win.LoadCSS(th.CSS)
+	win.SetMark(ui.Mark(th.Mark))
 }
 
 // app owns the live-capture pipeline's lifecycle: started on show, stopped
@@ -70,6 +116,7 @@ func runApp(args []string) error {
 type app struct {
 	win   *ui.Window
 	model *asr.Model
+	hooks *plugin.Runner // nil when no hooks are configured; safe to call
 
 	mu       sync.Mutex
 	visible  bool
@@ -112,6 +159,7 @@ func (a *app) showAndListen() {
 
 	a.win.SetText("") // back to idle for the new session
 	a.win.Show()
+	a.hooks.Fire(plugin.HookStart, "")
 	go a.runPipeline(stop)
 }
 
@@ -139,11 +187,18 @@ func (a *app) hideAndStop() {
 	}
 
 	if dictated == "" {
+		a.hooks.Fire(plugin.HookStop, "")
 		a.win.Hide()
 		return
 	}
 
 	ui.SetClipboard(dictated) // hideAndStop already runs on the GTK main thread (see handleToggle)
+	// on_copy is the hook that can do something *else* with the result --
+	// type it into the focused window, append it to a file -- so it fires
+	// with the same text that just went to the clipboard, before on_stop
+	// reports the session as over.
+	a.hooks.Fire(plugin.HookCopy, dictated)
+	a.hooks.Fire(plugin.HookStop, dictated)
 	a.win.ShowCopiedConfirmation()
 	time.AfterFunc(copiedConfirmationHold, func() {
 		ui.RunOnMainThread(func() {
@@ -213,6 +268,7 @@ func (a *app) runPipeline(stop chan struct{}) {
 				a.dictated = appendSentence(a.dictated, ev.Text)
 				display = a.dictated
 				a.mu.Unlock()
+				a.hooks.Fire(plugin.HookFinal, ev.Text)
 			} else {
 				a.mu.Lock()
 				display = appendSentence(a.dictated, ev.Text)

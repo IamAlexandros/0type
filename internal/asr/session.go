@@ -18,11 +18,35 @@ const (
 // Fedora package path used during development plus a couple of common
 // alternate locations; if none exist, ONNX Runtime's own default dlopen
 // search (LD_LIBRARY_PATH, ldconfig cache) is used instead.
+//
+// Paths relative to the binary itself come first (see
+// bundledLibraryPaths): a release tarball ships its own copy of the
+// library, and a bundle that silently ran against whatever different
+// version the host happened to have installed would be a bundle in name
+// only.
 var candidateLibraryPaths = []string{
 	"/usr/lib64/libonnxruntime.so",
 	"/usr/lib/libonnxruntime.so",
 	"/usr/lib/x86_64-linux-gnu/libonnxruntime.so",
 	"/usr/local/lib/libonnxruntime.so",
+}
+
+// bundledLibraryPaths returns the locations a release tarball may have
+// put libonnxruntime, relative to the running binary: lib/ beside it, and
+// ../lib for the usual bin/ + lib/ layout.
+func bundledLibraryPaths() []string {
+	exe, err := os.Executable()
+	if err != nil {
+		return nil
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved // an installer may have symlinked this onto $PATH
+	}
+	dir := filepath.Dir(exe)
+	return []string{
+		filepath.Join(dir, "lib", "libonnxruntime.so"),
+		filepath.Join(filepath.Dir(dir), "lib", "libonnxruntime.so"),
+	}
 }
 
 // InitEnvironment configures and initializes the ONNX Runtime environment.
@@ -49,7 +73,7 @@ func DestroyEnvironment() error {
 }
 
 func findLibrary() string {
-	for _, p := range candidateLibraryPaths {
+	for _, p := range append(bundledLibraryPaths(), candidateLibraryPaths...) {
 		if _, err := os.Stat(p); err == nil {
 			return p
 		}

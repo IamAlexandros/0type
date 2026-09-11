@@ -428,3 +428,145 @@ Theme is Raycast-restrained (`themes/default.css`): a lifted near-black
 translucent pill, neutral hairline, 1px inset top highlight for the glass
 rim, depth from a layered black shadow rather than a colored glow; the
 periwinkle accent survives only as a faint wash and the mark's "0".
+
+## Theming (Phase 6)
+
+Themes are GTK CSS files, resolved by `internal/theme`:
+
+1. an explicit path (`--theme ./mine.css`, or anything containing `/` or
+   ending `.css`),
+2. `~/.config/0type/themes/<name>.css`,
+3. a built-in, embedded in the binary with `go:embed`.
+
+A user file shadows a built-in of the same name, so tweaking a bundled
+theme is copy-edit-select rather than patching 0type. A bare name is
+never resolved against the working directory — a stray `default.css`
+lying around must not quietly become the theme.
+
+**The embedding is a bug fix, not a nicety.** The previous code called
+`win.LoadCSS("themes/default.css")` — a path relative to the *working
+directory*. Launched from the project checkout it looked right; launched
+from a GNOME keyboard shortcut (working directory `$HOME`) it silently
+rendered unstyled. Embedding removes the failure mode entirely, and
+`LoadCSS` now takes bytes.
+
+### Making the drawn content themeable
+
+The bar's contents are painted with Cairo, which knows nothing about CSS,
+so every color was a constant compiled into the binary — a "theme" could
+only restyle the panel *behind* the content. GTK4 has no API to read an
+arbitrary CSS property off a widget, and `gtk_style_context_lookup_color`
+(which would read `@define-color`) is deprecated.
+
+What works: **color probes**. `new_color_probe` adds an invisible
+`GtkLabel` to the panel per themeable color, named `#zt-accent`,
+`#zt-muted`, `#zt-success`, `#zt-meter`, `#zt-tile`; the theme sets
+`color` on those selectors, and the drawing code reads it back with the
+non-deprecated `gtk_widget_get_color()`. Invisible children are skipped
+during layout, so they cost nothing, but they must be in the window's
+hierarchy or GTK never computes their style. Colors are read per-draw, so
+a theme applied later takes effect without rebuilding anything.
+
+Verified by rendering all four built-ins and confirming the *drawn* parts
+(mark, meter, tile, idle text) change with the theme, not just the panel.
+
+### The mark directive
+
+Which brand mark to draw isn't expressible in CSS — there's no property
+whose value is "a shape 0type knows how to paint". The tricks that would
+smuggle one through (encoding the choice in a `font-family`, or a
+`min-width` on a dummy widget) are unreadable in the theme file and
+untestable without a live display. So themes declare it in a comment:
+
+```css
+/* 0type-mark: pixel */
+```
+
+CSS ignores it, `internal/theme` parses it in pure Go (so it's unit
+tested), and an unknown value is a loud error rather than a silent
+fallback to the default. Marks: `mic` (default), `pixel`, `zero`.
+
+`theme.Marks()` and `ui.Marks` declare the same three names in two
+packages — making the pure-Go theme package depend on the cgo/GTK one to
+share three strings costs more than it saves. `cmd/0type`'s
+`TestMarkListsAgree` fails if they drift.
+
+### Pixel art
+
+The `term` theme's 8-bit mic is a bitmap (`MARK_PIXEL_MIC`), not the
+vector mark scaled down — shrinking a smooth path is precisely how you
+lose the hard square pixels that make it read as 8-bit. Cells are 2.0
+logical px so the grid lands on whole device pixels at this display's
+scale factor 3.
+
+Three drafts failed before one read as a microphone, which is worth
+recording because the failures were not obvious on paper:
+
+- 5-wide capsule + detached arms → a blob with floating dots.
+- Narrow head + stem + wide foot → a chess pawn (head and stem fuse into
+  one silhouette when the stem sits directly under the head).
+- Head + cradle + equal-width base bar → furniture; two 5-wide bars with a
+  stem between them read as a chair.
+
+What works: cradle arms running *alongside* the head (not below it), and
+a stand that narrows on the way down — cradle 5 wide, stem 1, foot 3.
+
+Preview flags exist for exactly this loop: `0type ui --theme X
+--text "..." --level 0.6 --confirm` renders any state without loading the
+model or opening the microphone.
+
+## Plugin hooks (Phase 7)
+
+"Plugin" means a shell command in the config file, not a loadable module.
+0type's extension points are few and the interesting ones are one-liners
+(`on_copy = "wtype -"` types the dictation into the focused window), so a
+command with the text on stdin composes with everything already installed
+and needs no plugin API, ABI, or versioning story.
+
+Hooks: `on_start`, `on_final` (per finished sentence), `on_copy`,
+`on_stop`. Each gets the text on stdin and in `$ZEROTYPE_TEXT`, runs via
+`sh -c` on its own goroutine, and is killed after 5s. Failures are logged
+and swallowed — a hook must never break or delay dictation, which is what
+the timeout and async tests pin down.
+
+Unknown hook names are rejected at startup rather than ignored: a
+misspelled hook that silently never fires is indistinguishable from a
+broken one.
+
+## Config file
+
+`~/.config/0type/config.toml`, entirely optional — a missing file yields
+the same defaults as an empty one. A *malformed* file is a hard error;
+falling back to defaults because of a typo leaves the user staring at an
+overlay that ignores their settings with no clue why.
+
+The parser (`internal/config/toml.go`) handles the subset actually used:
+comments, `[section]`, and `key = "value"`. It is deliberately strict —
+numbers, arrays, unknown keys, and unknown sections are errors naming the
+line. Rationale: the whole config surface is a handful of strings, so a
+parser that *cannot* silently misread is worth more than one that accepts
+every valid TOML document, and it keeps the dependency list at the one
+library genuinely needed (ONNX Runtime). Files written to this subset are
+valid TOML, so a real library could be swapped in later.
+
+## Packaging (Phase 8)
+
+`make dist` stages a tarball: the binary, ONNX Runtime, the theme CSS as
+editable files, an installer, and the README.
+
+Deliberately **not** a single static executable. Two of the three native
+dependencies (GTK4, ALSA) are on every Linux desktop already and should
+come from the system; the third (ONNX Runtime) is neither universally
+installed nor version-stable, so it ships alongside and is found relative
+to the binary at runtime (`bundledLibraryPaths`, searched *before* system
+paths — a bundle that silently ran against the host's different version
+would be a bundle in name only). Resolution follows the `install.sh`
+symlink via `EvalSymlinks`, so `~/.local/bin/0type` still finds
+`~/.local/share/0type/lib`.
+
+The ~650MB model isn't in the tarball; `0type setup` fetches it once.
+Result: 9.7MB.
+
+Verified end-to-end rather than assumed: extract to a temp prefix, run
+`install.sh`, execute the symlink from `/`, and confirm via
+`/proc/<pid>/maps` that the *bundled* library is the one mapped.

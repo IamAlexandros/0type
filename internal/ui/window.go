@@ -86,6 +86,21 @@ typedef struct {
 	gboolean confirmation; // TRUE while showing "Copied" rather than idle/transcript text
 	double level_target;   // 0..1, from the capture pipeline
 	double level_current;  // eased toward level_target each frame (slide_tick)
+
+	// Color probes: permanently invisible widgets that exist only to carry
+	// a CSS `color` the theme can set (see new_color_probe). The bar's
+	// content is drawn with Cairo, which knows nothing about CSS, so
+	// without these every color here would be a constant compiled into the
+	// binary and a "theme" could only restyle the panel behind it. Reading
+	// them per-draw (rather than caching at startup) means a theme loaded
+	// later still takes effect.
+	GtkWidget *probe_accent;  // brand mark
+	GtkWidget *probe_muted;   // idle placeholder, and the transcript's fade tail
+	GtkWidget *probe_success; // "copied" confirmation
+	GtkWidget *probe_meter;   // level bars
+	GtkWidget *probe_tile;    // the mark's tile surface
+
+	int mark; // which brand mark to draw (MARK_MIC/MARK_PIXEL/MARK_ZERO)
 } SlideState;
 
 // Geometry of the three regions, in the drawing area's logical pixels.
@@ -100,16 +115,72 @@ typedef struct {
 #define CONTENT_X   (MARK_SIZE + MARK_GAP)
 #define CONTENT_W(width) ((width) - CONTENT_X - BARS_GAP - BARS_W)
 
-// The mark must read as a *digit* -- the name is a pun on zero -- so it
-// uses Adwaita Mono's dotted zero; in a proportional UI face the "0" is a
-// plain oval and reads as the letter O.
-#define MARK_GLYPH       "0"
-#define MARK_FONT_FAMILY "Adwaita Mono"
-#define MARK_FONT_PT     13
+// The brand mark the bar opens with. Which one is drawn is a *theme*
+// decision (see internal/theme's mark directive), not a build-time one,
+// because a mark that suits one theme can look wrong in another -- the
+// smooth vector mic that fits the default pill is exactly the thing that
+// breaks the illusion in the pixel-art terminal theme.
+//
+// A typed "0" was tried before any of these and rejected: in a
+// proportional face it's a plain oval that reads as the letter O, and
+// even a mono face's dotted zero read as a number badge, not a logo.
+#define MARK_MIC         0
+#define MARK_PIXEL       1
+#define MARK_ZERO        2
 #define IDLE_TEXT        "Listening…"
 #define FADE_W           40.0
 
+// The pixel-art mark is a bitmap rather than a scaled-down vector: 8-bit
+// means visible, square, aligned pixels, which is precisely what you lose
+// by shrinking a smooth path. Cells are drawn at PIXEL_CELL logical
+// pixels, chosen so the grid lands on whole device pixels at this
+// display's scale factor and the edges stay hard.
+#define PIXEL_CELL 2.0
+#define PIXEL_COLS 7
+#define PIXEL_ROWS 9
+
+// The cradle arms are what make this read as a microphone rather than a
+// pawn or a nail, so they run *alongside* the head rather than below it,
+// and the stand narrows on the way down (cradle, stem, foot) instead of
+// repeating the cradle's width -- two equal bars with a stem between them
+// read as furniture, which earlier drafts of this sprite duly did.
+static const char *const MARK_PIXEL_MIC[PIXEL_ROWS] = {
+	"..###..", // head
+	"..###..",
+	"#.###.#", // cradle arms, flanking the head
+	"#.###.#",
+	"#.###.#",
+	"#.###.#",
+	".#####.", // cradle
+	"...#...", // stem
+	"..###..", // foot
+};
+
+static const char *const MARK_PIXEL_CHECK[PIXEL_ROWS] = {
+	".......",
+	".......",
+	"......#",
+	".....##",
+	"#...##.",
+	"##.##..",
+	".####..",
+	"..##...",
+	".......",
+};
+
+// set_probe_color makes a color probe's themed CSS color the current Cairo
+// source, scaling its alpha by `alpha` (1.0 = exactly as the theme set it).
+static void set_probe_color(cairo_t *cr, GtkWidget *probe, double alpha) {
+	GdkRGBA c;
+	gtk_widget_get_color(probe, &c);
+	cairo_set_source_rgba(cr, c.red, c.green, c.blue, c.alpha * alpha);
+}
+
 static void rounded_rect(cairo_t *cr, double x, double y, double w, double h, double r) {
+	if (r <= 0) {
+		cairo_rectangle(cr, x, y, w, h); // the pixel mark's tile has hard corners
+		return;
+	}
 	cairo_new_sub_path(cr);
 	cairo_arc(cr, x + w - r, y + r, r, -G_PI / 2, 0);
 	cairo_arc(cr, x + w - r, y + h - r, r, 0, G_PI / 2);
@@ -119,46 +190,101 @@ static void rounded_rect(cairo_t *cr, double x, double y, double w, double h, do
 }
 
 // draw_mark paints the brand tile at the left edge: a subtle rounded
-// square holding the accent "0" -- or, during the confirmation, a green
-// check, so the whole bar reads as "done" at a glance.
-static void draw_mark(GtkWidget *area, cairo_t *cr, int height, gboolean confirmed) {
-	double y = (height - MARK_SIZE) / 2.0;
-	if (confirmed) {
-		cairo_set_source_rgba(cr, 0.54, 0.86, 0.68, 0.18);
-	} else {
-		cairo_set_source_rgba(cr, 1, 1, 1, 0.06);
+// square holding the accent mark (MARK_STYLE) -- or, during the
+// confirmation, a green check, so the whole bar reads as "done" at a glance.
+// draw_pixel_art paints one of the bitmaps above, centered in the tile,
+// as filled square cells snapped to whole logical pixels.
+static void draw_pixel_art(cairo_t *cr, const char *const *rows, double tile_y) {
+	double art_w = PIXEL_COLS * PIXEL_CELL, art_h = PIXEL_ROWS * PIXEL_CELL;
+	double x0 = floor((MARK_SIZE - art_w) / 2.0);
+	double y0 = floor(tile_y + (MARK_SIZE - art_h) / 2.0);
+	for (int r = 0; r < PIXEL_ROWS; r++) {
+		for (int c = 0; c < PIXEL_COLS; c++) {
+			if (rows[r][c] != '#') {
+				continue;
+			}
+			cairo_rectangle(cr, x0 + c * PIXEL_CELL, y0 + r * PIXEL_CELL, PIXEL_CELL, PIXEL_CELL);
+		}
 	}
-	rounded_rect(cr, 0.5, y + 0.5, MARK_SIZE - 1, MARK_SIZE - 1, MARK_RADIUS);
+	cairo_fill(cr);
+}
+
+static void draw_mark(GtkWidget *area, cairo_t *cr, int height, SlideState *s) {
+	gboolean confirmed = s->confirmation;
+	gboolean pixel = (s->mark == MARK_PIXEL);
+	double y = (height - MARK_SIZE) / 2.0;
+
+	// The tile is a flat surface while idle, and picks up the success tint
+	// during the confirmation so the whole left edge reads as "done". Its
+	// corners follow the mark: rounding a tile around pixel art
+	// reintroduces exactly the smooth curve the art is avoiding.
+	double radius = pixel ? 0.0 : MARK_RADIUS;
+	set_probe_color(cr, confirmed ? s->probe_success : s->probe_tile, confirmed ? 0.18 : 1.0);
+	rounded_rect(cr, 0.5, y + 0.5, MARK_SIZE - 1, MARK_SIZE - 1, radius);
 	cairo_fill_preserve(cr);
-	cairo_set_source_rgba(cr, 1, 1, 1, 0.08);
+	set_probe_color(cr, s->probe_tile, 1.35); // hairline: the same surface color, slightly stronger
 	cairo_set_line_width(cr, 1.0);
 	cairo_stroke(cr);
 
-	PangoLayout *layout = gtk_widget_create_pango_layout(area, confirmed ? "✓" : MARK_GLYPH);
-	if (!confirmed) {
-		PangoFontDescription *desc = pango_font_description_new();
-		pango_font_description_set_family(desc, MARK_FONT_FAMILY);
-		pango_font_description_set_size(desc, MARK_FONT_PT * PANGO_SCALE);
-		pango_font_description_set_weight(desc, PANGO_WEIGHT_MEDIUM);
-		pango_layout_set_font_description(layout, desc);
-		pango_font_description_free(desc);
-	}
-	int tw, th;
-	pango_layout_get_pixel_size(layout, &tw, &th);
 	if (confirmed) {
-		cairo_set_source_rgba(cr, 0.54, 0.86, 0.68, 0.95);
-	} else {
-		cairo_set_source_rgba(cr, 0.55, 0.62, 1.0, 0.92);
+		set_probe_color(cr, s->probe_success, 1.0);
+		if (pixel) {
+			draw_pixel_art(cr, MARK_PIXEL_CHECK, y);
+			return;
+		}
+		PangoLayout *layout = gtk_widget_create_pango_layout(area, "✓");
+		int tw, th;
+		pango_layout_get_pixel_size(layout, &tw, &th);
+		cairo_move_to(cr, (MARK_SIZE - tw) / 2.0, y + (MARK_SIZE - th) / 2.0);
+		pango_cairo_show_layout(cr, layout);
+		g_object_unref(layout);
+		return;
 	}
-	cairo_move_to(cr, (MARK_SIZE - tw) / 2.0, y + (MARK_SIZE - th) / 2.0);
-	pango_cairo_show_layout(cr, layout);
-	g_object_unref(layout);
+
+	// The mark itself is drawn, not typed: a font glyph dropped into a
+	// tile read as a number badge, not a logo.
+	double cx = MARK_SIZE / 2.0, cy = y + MARK_SIZE / 2.0;
+	set_probe_color(cr, s->probe_accent, 1.0);
+	cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+
+	if (pixel) {
+		draw_pixel_art(cr, MARK_PIXEL_MIC, y);
+		return;
+	}
+
+	if (s->mark == MARK_ZERO) {
+		// Geometric zero: a stroked capsule ring with a center dot -- the
+		// "dotted zero" idea, as an icon.
+		double rw = 8.0, rh = 12.0;
+		cairo_set_line_width(cr, 1.75);
+		rounded_rect(cr, cx - rw / 2, cy - rh / 2, rw, rh, rw / 2);
+		cairo_stroke(cr);
+		cairo_arc(cr, cx, cy, 1.3, 0, 2 * G_PI);
+		cairo_fill(cr);
+		return;
+	}
+
+	// Mic: capsule body, U cradle, stem, base.
+	double bw = 5.5, bh = 9.5;
+	rounded_rect(cr, cx - bw / 2, cy - 7.0, bw, bh, bw / 2);
+	cairo_fill(cr);
+	cairo_set_line_width(cr, 1.5);
+	cairo_new_sub_path(cr);
+	cairo_arc(cr, cx, cy - 0.5, 5.0, 0, G_PI);
+	cairo_stroke(cr);
+	cairo_move_to(cr, cx, cy + 4.5);
+	cairo_line_to(cr, cx, cy + 7.0);
+	cairo_stroke(cr);
+	cairo_move_to(cr, cx - 3.0, cy + 7.0);
+	cairo_line_to(cr, cx + 3.0, cy + 7.0);
+	cairo_stroke(cr);
 }
 
 // draw_bars paints the live level meter at the right edge: three thin
 // bars whose heights follow the (eased) mic level. Muted, so it's an
 // affordance that the bar is listening, not a feature.
-static void draw_bars(cairo_t *cr, int width, int height, double level) {
+static void draw_bars(cairo_t *cr, int width, int height, SlideState *s) {
+	double level = s->level_current;
 	const double min_h = 6.0, max_h = 16.0;
 	// The middle bar leads and the outer two lag slightly, so it reads as
 	// a signal rather than three identical sliders.
@@ -168,7 +294,9 @@ static void draw_bars(cairo_t *cr, int width, int height, double level) {
 		double h = min_h + (max_h - min_h) * level * scale[i];
 		double x = x0 + i * (BAR_W + BAR_GAP);
 		double y = (height - h) / 2.0;
-		cairo_set_source_rgba(cr, 1, 1, 1, 0.22 + 0.35 * level);
+		// Louder input doesn't just raise the bars, it brightens them --
+		// the meter reads as responding even at a glance.
+		set_probe_color(cr, s->probe_meter, 0.22 + 0.35 * level);
 		rounded_rect(cr, x, y, BAR_W, h, BAR_W / 2.0);
 		cairo_fill(cr);
 	}
@@ -200,16 +328,17 @@ static void draw_content(GtkWidget *area, cairo_t *cr, int width, int height, Sl
 	double y = (height - th) / 2.0;
 
 	if (idle) {
-		cairo_set_source_rgba(cr, 0.50, 0.52, 0.60, 0.85);
+		set_probe_color(cr, s->probe_muted, 1.0);
 		cairo_move_to(cr, CONTENT_X + (cw - tw) / 2.0, y);
 	} else if (s->confirmation) {
-		cairo_set_source_rgba(cr, 0.54, 0.86, 0.68, 0.95);
+		set_probe_color(cr, s->probe_success, 1.0);
 		cairo_move_to(cr, CONTENT_X + (cw - tw) / 2.0, y);
 	} else {
-		GdkRGBA color;
-		gtk_widget_get_color(area, &color);
+		GdkRGBA color, fade;
+		gtk_widget_get_color(area, &color);  // #zt-label: the transcript's own color
+		gtk_widget_get_color(s->probe_muted, &fade);
 		cairo_pattern_t *g = cairo_pattern_create_linear(CONTENT_X, 0, CONTENT_X + FADE_W, 0);
-		cairo_pattern_add_color_stop_rgba(g, 0.0, 0.50, 0.50, 0.54, color.alpha * 0.45);
+		cairo_pattern_add_color_stop_rgba(g, 0.0, fade.red, fade.green, fade.blue, color.alpha * 0.45);
 		cairo_pattern_add_color_stop_rgba(g, 1.0, color.red, color.green, color.blue, color.alpha);
 		cairo_set_source(cr, g);
 		cairo_pattern_destroy(g); // cairo_set_source holds its own reference
@@ -223,8 +352,8 @@ static void draw_content(GtkWidget *area, cairo_t *cr, int width, int height, Sl
 static void slide_draw(GtkDrawingArea *area, cairo_t *cr, int width, int height, gpointer data) {
 	SlideState *s = (SlideState *)data;
 	draw_content(GTK_WIDGET(area), cr, width, height, s);
-	draw_mark(GTK_WIDGET(area), cr, height, s->confirmation);
-	draw_bars(cr, width, height, s->level_current);
+	draw_mark(GTK_WIDGET(area), cr, height, s);
+	draw_bars(cr, width, height, s);
 }
 
 // slide_tick eases current_x toward target_x (and the level meter toward
@@ -319,6 +448,11 @@ static void slide_show_confirmation(SlideState *s, const char *text) {
 	gtk_widget_queue_draw(s->area);
 }
 
+static void slide_set_mark(SlideState *s, int mark) {
+	s->mark = mark;
+	gtk_widget_queue_draw(s->area);
+}
+
 static void slide_set_level(SlideState *s, double level) {
 	if (level < 0) {
 		level = 0;
@@ -330,6 +464,28 @@ static void slide_set_level(SlideState *s, double level) {
 
 static void box_append(GtkWidget *box, GtkWidget *child) {
 	gtk_box_append(GTK_BOX(box), child);
+}
+
+// new_color_probe adds an invisible label to the panel whose only purpose
+// is to be a CSS selector target: the theme sets `color` on #<name>, and
+// the Cairo drawing code reads it back with gtk_widget_get_color (see
+// set_probe_color). Invisible children are skipped during layout, so a
+// probe costs nothing visually, and the widget must be in the window's
+// hierarchy (not free-floating) for GTK to compute its style at all.
+static GtkWidget *new_color_probe(GtkWidget *box, const char *name) {
+	GtkWidget *probe = gtk_label_new("");
+	gtk_widget_set_name(probe, name);
+	gtk_widget_set_visible(probe, FALSE);
+	gtk_box_append(GTK_BOX(box), probe);
+	return probe;
+}
+
+static void slide_set_probes(SlideState *s, GtkWidget *accent, GtkWidget *muted, GtkWidget *success, GtkWidget *meter, GtkWidget *tile) {
+	s->probe_accent = accent;
+	s->probe_muted = muted;
+	s->probe_success = success;
+	s->probe_meter = meter;
+	s->probe_tile = tile;
 }
 
 static void window_set_child(GtkWidget *window, GtkWidget *child) {
@@ -348,9 +504,13 @@ static void widget_set_name(GtkWidget *widget, const char *name) {
 	gtk_widget_set_name(widget, name);
 }
 
-static void load_css(const char *path) {
+// load_css applies a stylesheet held in memory rather than one read from
+// a path: themes can be built into the binary (see internal/theme), so
+// 0type must not depend on a themes/ directory existing next to wherever
+// it happens to be run from.
+static void load_css(const char *css) {
 	GtkCssProvider *provider = gtk_css_provider_new();
-	gtk_css_provider_load_from_path(provider, path);
+	gtk_css_provider_load_from_string(provider, css);
 	GdkDisplay *display = gdk_display_get_default();
 	gtk_style_context_add_provider_for_display(display, GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 	g_object_unref(provider);
@@ -653,6 +813,13 @@ func New(initialText string) (*Window, error) {
 	withCString("zt-label", func(c *C.char) { C.widget_set_name(slide.area, c) })
 
 	C.box_append(box, slide.area)
+	C.slide_set_probes(slide,
+		newColorProbe(box, "zt-accent"),
+		newColorProbe(box, "zt-muted"),
+		newColorProbe(box, "zt-success"),
+		newColorProbe(box, "zt-meter"),
+		newColorProbe(box, "zt-tile"),
+	)
 	C.window_set_child(win, box)
 
 	withCString(initialText, func(c *C.char) { C.slide_retarget(slide, viewportWidthPx, c) })
@@ -660,10 +827,25 @@ func New(initialText string) (*Window, error) {
 	return &Window{win: win, panel: box, slide: slide}, nil
 }
 
-// LoadCSS applies the stylesheet at path application-wide. Selectors
-// #zt-panel and #zt-label target this window's widgets (see New).
-func (w *Window) LoadCSS(path string) {
-	withCString(path, func(c *C.char) { C.load_css(c) })
+// newColorProbe adds one invisible CSS-color carrier to the panel; see
+// new_color_probe for why the drawn content needs them.
+func newColorProbe(box *C.GtkWidget, name string) *C.GtkWidget {
+	var probe *C.GtkWidget
+	withCString(name, func(c *C.char) { probe = C.new_color_probe(box, c) })
+	return probe
+}
+
+// LoadCSS applies a stylesheet application-wide, from memory (themes are
+// embedded in the binary; see internal/theme). The selectors a theme is
+// expected to set are #zt-panel and #zt-label for the panel and its text,
+// plus #zt-accent, #zt-muted, #zt-success, #zt-meter and #zt-tile, whose
+// `color` drives the Cairo-drawn brand mark, idle placeholder,
+// confirmation, level meter and mark tile respectively (see
+// new_color_probe). Anything a theme leaves unset falls back to GTK's own
+// default for that property, which for a missing `color` is rarely what
+// the theme author wants -- the bundled themes set all of them.
+func (w *Window) LoadCSS(css []byte) {
+	withCString(string(css), func(c *C.char) { C.load_css(c) })
 }
 
 // SetText updates the transcript text and smoothly slides it into its new
@@ -683,6 +865,48 @@ func (w *Window) SetText(text string) {
 // goroutine.
 func SetClipboard(text string) {
 	withCString(text, func(c *C.char) { C.set_clipboard_text(c) })
+}
+
+// Mark names one of the brand marks the bar can draw at its left edge.
+// Which one is used is a theme's choice (see internal/theme).
+type Mark string
+
+const (
+	// MarkMic is a smooth vector microphone: the default.
+	MarkMic Mark = "mic"
+	// MarkPixel is an 8-bit microphone drawn as square cells, with a hard-
+	// cornered tile to match. For themes where a smooth curve would look
+	// out of place.
+	MarkPixel Mark = "pixel"
+	// MarkZero is a geometric "0" -- a ring with a center dot.
+	MarkZero Mark = "zero"
+)
+
+// Marks is every mark a theme may name.
+var Marks = []Mark{MarkMic, MarkPixel, MarkZero}
+
+// Valid reports whether m is a mark the overlay knows how to draw.
+func (m Mark) Valid() bool {
+	for _, known := range Marks {
+		if m == known {
+			return true
+		}
+	}
+	return false
+}
+
+// SetMark chooses the brand mark drawn at the left of the bar. An unknown
+// or empty mark falls back to MarkMic. Must be called from the GTK main
+// thread -- use RunOnMainThread from any other goroutine.
+func (w *Window) SetMark(m Mark) {
+	code := C.int(C.MARK_MIC)
+	switch m {
+	case MarkPixel:
+		code = C.MARK_PIXEL
+	case MarkZero:
+		code = C.MARK_ZERO
+	}
+	C.slide_set_mark(w.slide, code)
 }
 
 // SetLevel feeds the bar's live level meter (0..1, from the capture

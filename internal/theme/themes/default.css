@@ -1,18 +1,14 @@
 /* 0type default theme -- Raycast-style: a slim, dark, glassy pill near
  * the bottom of the screen. Sleek means restraint: depth comes from a
  * deep soft shadow and a 1px inner highlight along the top edge (the
- * "glass" rim), not from a colored glow ring. The accent survives only
- * as a faint wash under the panel and as the "0" in the idle wordmark.
+ * "glass" rim), not from a colored glow ring.
  *
- * Palette (keep to these):
- *   background  #1A1A21 @ .90   a notch above black so the panel still
- *                               separates from dark windows behind it
- *   hairline    white @ .07     outer border
- *   rim         white @ .06     inset top highlight
- *   accent      #7A8CFF         faint wash below, wordmark "0"
- *   text        #ECEDF5 @ .95
- *   muted       #80849A         idle wordmark (set in internal/ui)
- *   success     #8ADBAE         "Copied" confirmation (set in internal/ui)
+ * A theme controls color and typography, not layout: the bar's geometry
+ * (mark tile, content area, meter) is drawn with Cairo at fixed sizes in
+ * internal/ui. The `color` of the #zt-* rules below is read back by that
+ * drawing code -- those widgets are invisible and exist only to carry a
+ * themeable color (see new_color_probe in internal/ui/window.go), so a
+ * theme that omits one gets GTK's default rather than the value here.
  *
  * #zt-panel is inset from the window edge via `margin`: GTK clips
  * box-shadow hard at the window's own boundary, so a shadow with nothing
@@ -40,6 +36,8 @@ window {
   min-width: 240px;
 }
 
+/* The transcript itself. Its font is the whole bar's font: the drawing
+ * area inherits this Pango context for every string it paints. */
 #zt-label {
   color: rgba(236, 237, 245, 0.95);
   font-family: "Inter", "SF Pro Display", -apple-system, "Segoe UI", Cantarell, "Noto Sans", sans-serif;
@@ -47,3 +45,10 @@ window {
   font-weight: 500;
   letter-spacing: 0;
 }
+
+/* Drawn elements (see the note at the top). */
+#zt-accent  { color: rgba(140, 158, 255, 0.92); }  /* brand mark */
+#zt-muted   { color: rgba(128, 133, 153, 0.85); }  /* "Listening…", transcript fade tail */
+#zt-success { color: rgba(138, 219, 173, 0.95); }  /* "Copied to clipboard" */
+#zt-meter   { color: rgba(255, 255, 255, 1.0); }   /* level bars (alpha tracks the level) */
+#zt-tile    { color: rgba(255, 255, 255, 0.06); }  /* surface behind the brand mark */
