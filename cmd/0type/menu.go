@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"time"
 
 	"github.com/zalkanorr/0type/internal/config"
 	"github.com/zalkanorr/0type/internal/theme"
@@ -26,6 +27,9 @@ type menuState struct {
 	page     menuPage
 	selected int
 
+	// token identifies the current menu session, so a timeout scheduled
+	// for one open menu can't close a later one.
+	token  int
 	themes []theme.Entry
 	// themeBefore is the theme that was active when the theme page was
 	// opened, restored if the user backs out. Browsing themes applies them
@@ -33,6 +37,16 @@ type menuState struct {
 	// "just looking" silently changes your setup.
 	themeBefore string
 }
+
+// menuIdleTimeout closes an untouched menu, releasing the keyboard.
+//
+// This is not a nicety. Driving the menu requires an XGrabKeyboard (an
+// override-redirect window gets no focus otherwise -- see
+// internal/ui.GrabKeyboard), and while that grab is held the compositor
+// never sees key presses, which means 0type's *own* global shortcut stops
+// working. A menu left open on screen therefore breaks the main way the
+// program is used, so an idle one has to let go by itself.
+const menuIdleTimeout = 20 * time.Second
 
 // openMenu shows the root menu, taking the keyboard so arrow keys work.
 // Anything already on screen (a dictation session) is ended first: the
@@ -45,9 +59,11 @@ func (a *app) openMenu() {
 		a.hideAndStop()
 	}
 	a.menu.open = true
+	a.menu.token++
 	a.menu.page = pageRoot
 	a.menu.selected = 0
 	a.renderMenu()
+	a.resetMenuTimeout()
 	a.win.SetCentered(true)
 	a.win.Show()
 	a.win.SetKeyHandler(a.handleMenuKey)
@@ -61,12 +77,30 @@ func (a *app) openMenu() {
 	})
 }
 
+// resetMenuTimeout restarts the idle countdown; called on every key so
+// the menu only closes itself when genuinely untouched. Bumping the token
+// is what cancels the previous countdown -- without it the timer armed
+// when the menu opened would still fire on schedule and close a menu
+// somebody was actively using.
+func (a *app) resetMenuTimeout() {
+	a.menu.token++
+	token := a.menu.token
+	time.AfterFunc(menuIdleTimeout, func() {
+		ui.RunOnMainThread(func() {
+			if a.menu.open && a.menu.token == token {
+				a.closeMenu()
+			}
+		})
+	})
+}
+
 // closeMenu hides the menu and gives the keyboard back.
 func (a *app) closeMenu() {
 	if !a.menu.open {
 		return
 	}
 	a.menu.open = false
+	a.menu.token++ // invalidate any pending idle timeout
 	a.win.SetKeyHandler(nil)
 	a.win.ReleaseKeyboard()
 	a.win.Hide()
@@ -122,6 +156,7 @@ func (a *app) handleMenuKey(k ui.Key) bool {
 	if count == 0 {
 		return true
 	}
+	a.resetMenuTimeout()
 
 	switch k {
 	case ui.KeyUp, ui.KeyDown:
@@ -153,7 +188,15 @@ func (a *app) handleMenuKey(k ui.Key) bool {
 		a.closeMenu()
 		return true
 	}
-	return false
+
+	// Any other key closes the menu. While it's open the keyboard is
+	// grabbed, so a key meant for another window is swallowed anyway --
+	// and, worse, so is 0type's own global shortcut, because the
+	// compositor never sees it. Dismissing on the first unrecognized
+	// press limits that to a single lost keystroke instead of leaving the
+	// keyboard captured until someone finds the menu and presses Escape.
+	a.closeMenu()
+	return true
 }
 
 func (a *app) activateMenuItem() {

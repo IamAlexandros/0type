@@ -663,3 +663,28 @@ copy: the model takes seconds to load and hundreds of MB to hold. A
 pidfile left behind by a crashed instance is treated as "not running" --
 signalling a PID that has since been reused by something else would be
 worse than starting a second copy.
+
+### The menu's keyboard grab breaks the global shortcut (and what's done about it)
+
+Driving the menu needs an `XGrabKeyboard`. While that grab is held, the
+compositor never sees key presses -- which means 0type's own GNOME
+shortcut stops working, because it's Mutter that runs
+`0type toggle`. Leaving a menu open on screen therefore breaks the main
+way the program is used. This showed up immediately in practice: the app
+was left running with its startup menu open, and the shortcut appeared
+dead. (The toggle signal path was fine; `0type toggle` returned 0 and the
+window appeared. The key was simply never reaching the compositor.)
+
+Two mitigations, both of which are about limiting how long the grab can
+be held rather than avoiding it:
+
+- An idle menu closes itself after 20 seconds, releasing the keyboard.
+- Any key the menu doesn't recognize closes it. A key meant for another
+  window is swallowed by the grab regardless, so dismissing on the first
+  unrecognized press costs one keystroke instead of leaving the keyboard
+  captured until somebody finds the menu and presses Escape.
+
+Note that this rules out "type to filter" in the menu without first
+solving the focus problem differently -- e.g. making the window a normal
+managed window while the menu is up, so Mutter focuses it and keeps
+handling its own keybindings, instead of grabbing.
