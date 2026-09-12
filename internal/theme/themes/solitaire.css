@@ -1,0 +1,52 @@
+/* 0type "solitaire" -- green felt, forever.
+ *
+ * 0type-idle: Deal
+ * 0type-copied: Nice cards!
+ *
+ * A playing card.
+ * 0type-art:
+ * .######.
+ * .#....#.
+ * .#.##.#.
+ * .#.##.#.
+ * .#.##.#.
+ * .#....#.
+ * .######.
+ *
+ * The table is the theme: #008000, the flat VGA green Windows used for
+ * the Solitaire background and never changed. On top of it, a window
+ * bevel and white card-faced text.
+ *
+ * Red is the suit color and does the work of an accent, which is why the
+ * confirmation is red rather than green -- green here is furniture, not
+ * a signal. */
+
+window { background-color: transparent; }
+
+#zt-panel {
+  margin: 40px;
+  background-color: #008000;
+  border-radius: 0;
+  border: none;
+  box-shadow:
+    inset  2px  2px 0 #3cb03c,
+    inset -2px -2px 0 #004d00,
+    inset  4px  4px 0 rgba(255, 255, 255, 0.06),
+    3px 3px 0 rgba(0, 0, 0, 0.45),
+    0 12px 26px rgba(0, 0, 0, 0.40);
+  padding: 11px 18px;
+  min-width: 240px;
+}
+
+#zt-label {
+  color: #ffffff;
+  font-family: "Selawik", "Tahoma", "Liberation Sans", sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+}
+
+#zt-accent  { color: #ffffff; }
+#zt-muted   { color: #bfe0bf; }
+#zt-success { color: #ff4040; }   /* hearts and diamonds */
+#zt-meter   { color: #ffffff; }
+#zt-tile    { color: rgba(255, 255, 255, 0.18); }

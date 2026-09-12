@@ -1,0 +1,45 @@
+/* 0type "minecraft" -- the inventory screen.
+ *
+ * 0type-mark: pixel
+ * 0type-idle: Crafting
+ * 0type-copied: Item crafted
+ *
+ * The GUI panel is #c6c6c6 with a hard two-tone bevel: white along the
+ * top and left, #555 along the bottom and right, and no radius anywhere.
+ * That's the whole Minecraft UI -- every slot, button and window is that
+ * same bevel at a different size.
+ *
+ * Text is the dark gray of inventory labels with a hint of the drop
+ * shadow the game draws under everything, approximated here by keeping
+ * the muted tone close to the text tone rather than fading it out. */
+
+window { background-color: transparent; }
+
+#zt-panel {
+  margin: 40px;
+  background-color: #c6c6c6;
+  border-radius: 0;
+  border: none;
+  box-shadow:
+    inset  3px  3px 0 #ffffff,
+    inset -3px -3px 0 #555555,
+    inset  6px  6px 0 #c6c6c6,
+    0 6px 0 rgba(0, 0, 0, 0.35),
+    0 14px 28px rgba(0, 0, 0, 0.45);
+  padding: 12px 20px;
+  min-width: 240px;
+}
+
+#zt-label {
+  color: #3f3f3f;
+  font-family: "Silkscreen", "Press Start 2P", monospace;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.5px;
+}
+
+#zt-accent  { color: #3f3f3f; }
+#zt-muted   { color: #7a7a7a; }
+#zt-success { color: #3c8527; }   /* the XP-bar green */
+#zt-meter   { color: #555555; }
+#zt-tile    { color: rgba(85, 85, 85, 0.22); }

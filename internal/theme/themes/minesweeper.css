@@ -1,0 +1,51 @@
+/* 0type "minesweeper" -- one wrong click from the end.
+ *
+ * 0type-idle: 010
+ * 0type-copied: CLEARED
+ *
+ * A mine.
+ * 0type-art:
+ * ...#....
+ * ...#....
+ * ..###...
+ * .#####..
+ * #######.
+ * .#####..
+ * ..###...
+ * ...#....
+ *
+ * The Win32 bevel again, but the *outset* version used for unrevealed
+ * cells: light top-left, dark bottom-right, on #c0c0c0. The counter is
+ * the giveaway detail -- red seven-segment digits on black, which is why
+ * the idle state is a number and the accent is that red rather than
+ * anything from the window chrome. */
+
+window { background-color: transparent; }
+
+#zt-panel {
+  margin: 40px;
+  background-color: #c0c0c0;
+  border-radius: 0;
+  border: none;
+  box-shadow:
+    inset  2px  2px 0 #ffffff,
+    inset -2px -2px 0 #808080,
+    inset  3px  3px 0 #dfdfdf,
+    inset -3px -3px 0 #6a6a6a,
+    3px 3px 0 rgba(0, 0, 0, 0.40);
+  padding: 11px 18px;
+  min-width: 240px;
+}
+
+#zt-label {
+  color: #000000;
+  font-family: "Selawik", "Tahoma", "Liberation Sans", sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+#zt-accent  { color: #d40000; }   /* the counter's LED red */
+#zt-muted   { color: #6a6a6a; }
+#zt-success { color: #008000; }
+#zt-meter   { color: #0000d4; }   /* the "1" blue */
+#zt-tile    { color: rgba(0, 0, 0, 0.14); }

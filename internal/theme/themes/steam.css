@@ -1,0 +1,42 @@
+/* 0type "steam" -- the 2010s dark client.
+ *
+ * 0type-idle: Listening…
+ * 0type-copied: Copied to clipboard
+ *
+ * Three values do almost all of it: #171a21 for the chrome, #1b2838 for
+ * the content behind it, and #66c0f4 for anything you can click. Body
+ * text is #c7d5e0 -- a pale blue-gray, never white, which is why the
+ * whole client reads as cool rather than neutral.
+ *
+ * The panel is the content surface with the chrome color behind it, so
+ * the gradient runs from the lighter blue-gray down into near-black.
+ * Corners are barely rounded; Steam's are 2-3px at most. */
+
+window { background-color: transparent; }
+
+#zt-panel {
+  margin: 44px;
+  background-image: linear-gradient(to bottom, #1b2838 0%, #16202d 60%, #171a21 100%);
+  background-color: #1b2838;
+  border-radius: 3px;
+  border: 1px solid #000000;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 2px 6px rgba(0, 0, 0, 0.50),
+    0 12px 30px rgba(0, 0, 0, 0.55);
+  padding: 11px 20px;
+  min-width: 240px;
+}
+
+#zt-label {
+  color: #c7d5e0;
+  font-family: "Selawik", "Motiva Sans", Cantarell, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+}
+
+#zt-accent  { color: #66c0f4; }
+#zt-muted   { color: #6a8095; }
+#zt-success { color: #a4d007; }   /* the green of an installed game */
+#zt-meter   { color: #66c0f4; }
+#zt-tile    { color: rgba(102, 192, 244, 0.12); }
