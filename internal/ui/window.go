@@ -869,6 +869,44 @@ static void widget_set_name(GtkWidget *widget, const char *name) {
 // settings menu.
 static GtkCssProvider *css_provider = NULL;
 
+// snapshot_to_png renders the window exactly as it currently looks into a
+// PNG with a real alpha channel, at `scale` times its logical size.
+//
+// Screen captures can't do this: the window's transparent margin comes
+// back as solid black, which shows up as black triangles in every rounded
+// corner and a dark box around the panel on any page that isn't black.
+// Asking GTK to render its own scene graph to a texture keeps the
+// transparency, and the box-shadow with it.
+static int snapshot_to_png(GtkWidget *window, const char *path, double scale) {
+	int w = gtk_widget_get_width(window);
+	int h = gtk_widget_get_height(window);
+	if (w <= 0 || h <= 0) {
+		return 1;
+	}
+
+	GdkPaintable *paintable = gtk_widget_paintable_new(window);
+	GtkSnapshot *snapshot = gtk_snapshot_new();
+	gtk_snapshot_scale(snapshot, (float)scale, (float)scale);
+	gdk_paintable_snapshot(paintable, GDK_SNAPSHOT(snapshot), w, h);
+	GskRenderNode *node = gtk_snapshot_free_to_node(snapshot);
+	g_object_unref(paintable);
+	if (node == NULL) {
+		return 2;
+	}
+
+	GskRenderer *renderer = gtk_native_get_renderer(gtk_widget_get_native(window));
+	graphene_rect_t bounds = GRAPHENE_RECT_INIT(0, 0, (float)(w * scale), (float)(h * scale));
+	GdkTexture *texture = gsk_renderer_render_texture(renderer, node, &bounds);
+	gsk_render_node_unref(node);
+	if (texture == NULL) {
+		return 3;
+	}
+
+	gboolean ok = gdk_texture_save_to_png(texture, path);
+	g_object_unref(texture);
+	return ok ? 0 : 4;
+}
+
 static void load_css(const char *css) {
 	if (css_provider == NULL) {
 		css_provider = gtk_css_provider_new();
@@ -1484,6 +1522,27 @@ func (w *Window) Run() {
 
 // Quit stops the main loop started by Run. Safe to call from any
 // goroutine (it schedules the actual quit onto the main thread).
+// SaveScreenshot renders the window as it currently appears to a PNG at
+// path, keeping its transparency, at scale times its logical size. The
+// window must be shown and laid out. Must be called from the GTK main
+// thread.
+func (w *Window) SaveScreenshot(path string, scale float64) error {
+	var code C.int
+	withCString(path, func(c *C.char) { code = C.snapshot_to_png(w.win, c, C.double(scale)) })
+	switch code {
+	case 0:
+		return nil
+	case 1:
+		return fmt.Errorf("ui: screenshot: window has no size yet")
+	case 2:
+		return fmt.Errorf("ui: screenshot: nothing to render")
+	case 3:
+		return fmt.Errorf("ui: screenshot: the renderer produced no image")
+	default:
+		return fmt.Errorf("ui: screenshot: could not write %s", path)
+	}
+}
+
 func (w *Window) Quit() {
 	RunOnMainThread(func() {
 		if w.loop != nil {

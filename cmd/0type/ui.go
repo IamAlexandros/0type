@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"time"
 
 	"github.com/IamAlexandros/0type/internal/config"
 	"github.com/IamAlexandros/0type/internal/theme"
@@ -29,6 +30,11 @@ func runUI(args []string) error {
 	// is the only practical way to check that layout.
 	menuFlag := fs.Bool("menu", false, "show the theme menu instead of the dictation bar")
 	menuSelFlag := fs.Int("menu-selected", 0, "which menu row to select (with --menu)")
+	rootMenuFlag := fs.Bool("root-menu", false, "show the main menu the app opens with")
+	// For the README and the theme gallery: images with real transparency,
+	// which screen captures can't produce (see ui.SaveScreenshot).
+	shotFlag := fs.String("screenshot", "", "render to this PNG, with transparency, and exit")
+	scaleFlag := fs.Float64("scale", 3, "pixel density for --screenshot")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -63,7 +69,29 @@ func runUI(args []string) error {
 		win.SetCentered(true)
 		win.ShowMenu(items, *menuSelFlag)
 	}
-	win.Show()
+	if *rootMenuFlag {
+		win.SetCentered(true)
+		win.ShowMenu(rootMenuItems(th.Name), *menuSelFlag)
+	}
+	// Show from inside the main loop, not before it. Run is what realizes
+	// the window and marks it override-redirect; calling Show first maps a
+	// window that isn't set up yet, and whether it then ends up drawable
+	// is a race -- it wasn't, in about a quarter of runs. The app itself
+	// always shows its window from the running loop, which is why only
+	// this preview command was affected.
+	ui.RunOnMainThread(win.Show)
+
+	var shotErr error
+	if *shotFlag != "" {
+		// Wait out the ~320ms intro animation: the panel fades in from
+		// transparent, so an earlier snapshot captures it half-faded.
+		time.AfterFunc(900*time.Millisecond, func() {
+			ui.RunOnMainThread(func() {
+				shotErr = win.SaveScreenshot(*shotFlag, *scaleFlag)
+				win.Quit()
+			})
+		})
+	}
 	win.Run()
-	return nil
+	return shotErr
 }

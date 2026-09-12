@@ -130,9 +130,16 @@ const (
 // Quitting stops the resident process, so the next shortcut press has to
 // load the model again -- not what anyone means by "close this".
 func (a *app) rootItems() []ui.MenuItem {
+	return rootMenuItems(a.themeName)
+}
+
+// rootMenuItems is the root menu's rows. A function of its own so the
+// preview command renders the menu the app actually shows, rather than a
+// copy of it that drifts the next time a row changes.
+func rootMenuItems(themeName string) []ui.MenuItem {
 	return []ui.MenuItem{
 		{Label: "Start dictation", Detail: "⏎"},
-		{Label: "Theme", Detail: a.themeName},
+		{Label: "Theme", Detail: themeName},
 		{Label: "Close menu", Detail: "esc"},
 		{Label: "Quit 0type", Detail: "stops it running"},
 	}
