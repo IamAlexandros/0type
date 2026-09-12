@@ -1,0 +1,45 @@
+/* 0type "cs16" -- the 1.6 main menu.
+ *
+ * 0type-idle: READY
+ * 0type-copied: COPIED
+ *
+ * Olive (#4c5844) panels with a 1px two-tone bevel, and text that is
+ * *grey* -- #c8c8c8 at rest, white on hover. The gold (#c4b550) is only
+ * for an armed control, so here it's the accent and nothing else.
+ *
+ * The orange menu everyone half-remembers doesn't exist in the stock
+ * scheme file; #ffa500 appears nowhere in it. What's remembered is
+ * probably the gold-on-olive of a highlighted row.
+ *
+ * Verdana was the menu face, so the stack reaches for the metric-
+ * compatible substitute before anything else. */
+
+window { background-color: transparent; }
+
+#zt-panel {
+  margin: 40px;
+  background-color: #4c5844;
+  border-radius: 0;
+  border: none;
+  box-shadow:
+    inset  1px  1px 0 #889180,
+    inset -1px -1px 0 #282e22,
+    inset  2px  2px 0 #4c5844,
+    0 4px 0 #282e22,
+    0 12px 28px rgba(0, 0, 0, 0.55);
+  padding: 11px 18px;
+  min-width: 240px;
+}
+
+#zt-label {
+  color: #c8c8c8;
+  font-family: "DejaVu Sans", Verdana, "Liberation Sans", sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+#zt-accent  { color: #c4b550; }   /* armed controls */
+#zt-muted   { color: #8a9180; }
+#zt-success { color: #ffffff; }
+#zt-meter   { color: #c4b550; }
+#zt-tile    { color: rgba(196, 181, 80, 0.18); }

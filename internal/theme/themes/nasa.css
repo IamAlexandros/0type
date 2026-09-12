@@ -15,10 +15,15 @@
  * ##...###
  * ##....##
  *
- * The identity was one red (#fc3d21), one typeface, and nothing else --
+ * The identity was one red, one typeface, and nothing else --
  * no gradients, no bevels, no second color. The Graphics Standards Manual
  * is emphatic about that, so this is red on white with a single hairline
  * and generous letter-spacing, which is how the worm was always set.
+ *
+ * The red is PMS 185 (~#e10027), NOT the #fc3d21 that turns up in most
+ * "NASA red" lists -- that value is the meatball's, a different mark from
+ * a different era. The 1976 manual specifies the worm's red as a process
+ * formula of 100 magenta + 100 yellow.
  *
  * White ground rather than black: the manual's primary application is the
  * red logotype on white. */
@@ -29,7 +34,7 @@ window { background-color: transparent; }
   margin: 42px;
   background-color: #ffffff;
   border-radius: 0;
-  border: 2px solid #fc3d21;
+  border: 2px solid #e10027;
   box-shadow:
     0 2px 4px rgba(0, 0, 0, 0.20),
     0 12px 28px rgba(0, 0, 0, 0.22);
@@ -38,15 +43,15 @@ window { background-color: transparent; }
 }
 
 #zt-label {
-  color: #fc3d21;
+  color: #e10027;
   font-family: "Selawik", "Helvetica", Cantarell, sans-serif;
   font-size: 14px;
   font-weight: 700;
   letter-spacing: 2px;
 }
 
-#zt-accent  { color: #fc3d21; }
+#zt-accent  { color: #e10027; }
 #zt-muted   { color: #b0b0b0; }
 #zt-success { color: #0b3d91; }   /* the other NASA color, from the meatball */
-#zt-meter   { color: #fc3d21; }
+#zt-meter   { color: #e10027; }
 #zt-tile    { color: rgba(252, 61, 33, 0.14); }

@@ -15,11 +15,13 @@
  * ..####..
  *
  * #3b5998 is the whole memory: the header bar, the links, the buttons.
- * Around it, #edeff4 page gray and white content boxes with a #d8dfea
- * border -- the era's entire visual vocabulary was "white box, thin blue-
- * gray border, blue header".
+ * Around it, white content boxes with a #d8dfea border -- the era's
+ * entire visual vocabulary was "white box, thin blue-gray border, blue
+ * header". (#edeff4 and #dfe3ee, which every "Facebook palette" page
+ * lists, appear nowhere in the 2008 or 2010 stylesheets; they're
+ * post-2011.)
  *
- * Text is #1c1e21 rather than black, and the type is a plain UI sans:
+ * Text is #333333 rather than black, and the type is a plain UI sans:
  * this was a site that looked like a form, deliberately. */
 
 window { background-color: transparent; }
@@ -39,14 +41,14 @@ window { background-color: transparent; }
 }
 
 #zt-label {
-  color: #1c1e21;
+  color: #333333;
   font-family: "Selawik", "Lucida Grande", Cantarell, sans-serif;
   font-size: 14px;
   font-weight: 400;
 }
 
 #zt-accent  { color: #3b5998; }
-#zt-muted   { color: #8d949e; }
-#zt-success { color: #42b72a; }
+#zt-muted   { color: #777777; }
+#zt-success { color: #3b6e22; }
 #zt-meter   { color: #3b5998; }
 #zt-tile    { color: rgba(59, 89, 152, 0.12); }

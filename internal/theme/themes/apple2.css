@@ -8,10 +8,11 @@
  * state. Uppercase everywhere, because the II couldn't do anything else
  * until the IIe.
  *
- * Distinct from "term" on purpose: this green is yellower and dimmer
- * (P1 phosphor, not the saturated P31 of a later terminal), the glow is
- * heavier, and the type is wide and soft rather than crisp -- a composite
- * monitor at 40 columns had no sharp edges anywhere. */
+ * Distinct from "term" on purpose: #00c000 exactly (the value emulators
+ * use for Apple II monochrome green), a heavier bloom, and wide soft type
+ * -- a composite monitor at 40 columns had no sharp edges anywhere. The
+ * usual claim that this is "P1 phosphor" isn't supported by any source I
+ * could find, so it isn't made here. */
 
 window { background-color: transparent; }
 
@@ -19,26 +20,26 @@ window { background-color: transparent; }
   margin: 44px;
   background-color: #060a05;
   border-radius: 10px;
-  border: 2px solid rgba(140, 220, 90, 0.18);
+  border: 2px solid rgba(0, 192, 0, 0.20);
   box-shadow:
-    inset 0 0 26px rgba(120, 200, 80, 0.10),
+    inset 0 0 26px rgba(0, 192, 0, 0.10),
     0 3px 8px rgba(0, 0, 0, 0.55),
     0 14px 32px rgba(0, 0, 0, 0.60),
-    0 0 30px rgba(120, 210, 70, 0.20);
+    0 0 30px rgba(0, 192, 0, 0.22);
   padding: 11px 20px;
   min-width: 240px;
 }
 
 #zt-label {
-  color: #8ee04e;
+  color: #00c000;
   font-family: "VT323", "Adwaita Mono", monospace;
   font-size: 20px;
   font-weight: 400;
   letter-spacing: 1.5px;
 }
 
-#zt-accent  { color: #b6f07a; }
-#zt-muted   { color: #4c7a2e; }
-#zt-success { color: #d8ffaa; }
-#zt-meter   { color: #8ee04e; }
-#zt-tile    { color: rgba(142, 224, 78, 0.12); }
+#zt-accent  { color: #33ff33; }
+#zt-muted   { color: #006000; }
+#zt-success { color: #aaffaa; }
+#zt-meter   { color: #00c000; }
+#zt-tile    { color: rgba(0, 192, 0, 0.14); }

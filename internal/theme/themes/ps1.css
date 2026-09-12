@@ -1,0 +1,54 @@
+/* 0type "ps1" -- the BIOS memory card manager.
+ *
+ * 0type-idle: Memory Card
+ * 0type-copied: Saved to Slot 1
+ *
+ * The card.
+ * 0type-art:
+ * .######.
+ * .#....#.
+ * .#.##.#.
+ * .#.##.#.
+ * .#....#.
+ * .#....#.
+ * .######.
+ *
+ * Navy at the top fading to a lighter blue below, violet-blue plates,
+ * white labels, and Gouraud gradients on everything -- no strokes, no
+ * bevels, no hard edges. That gradient is the whole screen.
+ *
+ * The values are sampled from captures rather than a frame dump, and the
+ * gradients genuinely varied between BIOS revisions and regions, so this
+ * is a faithful impression rather than a canonical palette. (Its sibling
+ * the CD player screen is deliberately absent: no frame-accurate source
+ * for it held up, and guessing at it would be worse than leaving it out.) */
+
+window { background-color: transparent; }
+
+#zt-panel {
+  margin: 44px;
+  background-image: linear-gradient(to bottom, #000021 0%, #1a4280 70%, #31317b 100%);
+  background-color: #000021;
+  border-radius: 10px;
+  border: 1px solid rgba(123, 123, 246, 0.40);
+  box-shadow:
+    inset 0 1px 0 rgba(190, 190, 255, 0.30),
+    0 3px 8px rgba(0, 0, 0, 0.50),
+    0 14px 32px rgba(0, 0, 0, 0.55);
+  padding: 11px 20px;
+  min-width: 240px;
+}
+
+#zt-label {
+  color: #ffffff;
+  font-family: "Selawik", Cantarell, "Noto Sans", sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: 0.5px;
+}
+
+#zt-accent  { color: #7b7bf6; }
+#zt-muted   { color: #8e8ec8; }
+#zt-success { color: #ffffff; }
+#zt-meter   { color: #7b7bf6; }
+#zt-tile    { color: rgba(123, 123, 246, 0.22); }

@@ -90,22 +90,26 @@ that fails or hangs is logged and killed. The hooks are `on_start`,
 
 ## Themes
 
-Twenty-four are built in.
+Forty are built in.
 
 *Plain:* `default` (dark, glassy), `light`, `mono` (grayscale).
 
 *Terminals:* `term` (green phosphor), `amber` (amber CRT), `dos` (CGA text
-mode), `c64` (the Commodore boot screen), `bios` (setup, F10 to save),
-`teletext` (Ceefax page 100).
+mode), `c64`, `apple2`, `bios` (setup, F10 to save), `teletext` (Ceefax
+page 100), `led` (a 1970s calculator, in real fourteen-segment type).
 
 *Desktops:* `win98`, `winxp` (an actual window, title bar and all),
 `vista` (Aero glass), `macclassic` (System 6, black on white), `aqua`
-(Mac OS X lozenge), `discord`.
+(Mac OS X lozenge), `minesweeper`, `solitaire`, `mspaint`.
 
-*Devices:* `gameboy`, `nokia3310`, `tamagotchi`, `winamp`, `xbox`, `ps2`
-(the memory card browser), `vhs` (scanlines and all).
+*Apps &amp; sites:* `discord`, `msn`, `steam`, `steamgreen` (the olive
+client), `facebook` (2008), `yahoo` (2001), `nasa` (the worm era).
 
-*Other:* `msn` (Messenger), `polaroid` (a photo with a chin to write on).
+*Games:* `minecraft`, `cs16`, `gtasa`, `clubpenguin`, `pokedex`.
+
+*Devices:* `gameboy`, `nokia3310`, `tamagotchi`, `winamp`, `xbox`, `ps1`,
+`ps2` (the memory card browsers), `vhs` (scanlines and all), `polaroid`
+(a photo with a chin to write on).
 
 They set their own wording too, so the Game Boy says READY and SAVED!
 where DOS says `C:\>` and `1 file(s) copied.`
@@ -137,9 +141,10 @@ and its own sprite — up to 16×16, drawn in the comment itself:
 That's how the Tamagotchi gets a creature instead of a microphone, the
 Xbox its jewel, Winamp its bolt, and DOS its prompt.
 
-Six fonts are embedded in the binary and registered for 0type alone
+Seven fonts are embedded in the binary and registered for 0type alone
 (nothing is installed into your system): Press Start 2P, Silkscreen,
-VT323, Caveat, and Selawik regular/bold — all SIL Open Font License, with the
+VT323, Caveat, DSEG14 (a real fourteen-segment display face), and
+Selawik regular/bold — all SIL Open Font License, with the
 license texts in `licenses/` in the tarball.
 Preview as you go with `0type ui --theme ./mine.css --text "hello"`.
 

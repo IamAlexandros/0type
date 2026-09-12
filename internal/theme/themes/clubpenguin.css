@@ -1,0 +1,58 @@
+/* 0type "clubpenguin" -- the 2007 toolbar.
+ *
+ * 0type-idle: Waddle on!
+ * 0type-copied: Saved to igloo
+ *
+ * A penguin.
+ * 0type-art:
+ * ..####..
+ * .######.
+ * .#.##.#.
+ * .######.
+ * .######.
+ * .######.
+ * .######.
+ * .##..##.
+ *
+ * Everything in that game was the same object at different sizes: a fat
+ * rounded pill, a heavy navy outline, and a glossy highlight along the
+ * top half. Take away the navy stroke and it stops looking like Club
+ * Penguin immediately -- it's a 3-4px outline on a UI this small, which
+ * is enormous, and that's the point.
+ *
+ * Values are sampled from the original toolbar asset rather than from the
+ * fan colour lists, which drift lighter. */
+
+window { background-color: transparent; }
+
+#zt-panel {
+  margin: 42px;
+  background-image: linear-gradient(to bottom,
+    #33ccff 0%,
+    #00ccff 42%,
+    #0099cc 50%,
+    #007aa8 100%);
+  background-color: #0099cc;
+  border-radius: 26px;
+  border: 4px solid #003366;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.55),
+    inset 0 -2px 0 rgba(0, 51, 102, 0.35),
+    0 4px 0 #006599,
+    0 12px 26px rgba(0, 40, 70, 0.45);
+  padding: 10px 20px;
+  min-width: 240px;
+}
+
+#zt-label {
+  color: #ffffff;
+  font-family: "Selawik", Cantarell, "Noto Sans", sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+#zt-accent  { color: #fae561; }   /* coin yellow */
+#zt-muted   { color: rgba(255, 255, 255, 0.72); }
+#zt-success { color: #fae561; }
+#zt-meter   { color: #ffffff; }
+#zt-tile    { color: rgba(0, 51, 102, 0.30); }

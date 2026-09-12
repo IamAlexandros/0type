@@ -1,0 +1,43 @@
+/* 0type "gtasa" -- the pause menu, 2004.
+ *
+ * 0type-idle: PAUSED
+ * 0type-copied: GAME SAVED
+ *
+ * The menu is black, flat, and has no panel at all: text with a hard drop
+ * shadow over whatever was on screen. The only chrome is the translucent
+ * slate-blue map plate, which is what the border here stands in for.
+ *
+ * The colors are the game's own constants, not eyedropped from a
+ * screenshot: unselected rows are a desaturated slate (#4a5a6b), the
+ * selected row is HUD light blue (#accbf1), and mission text is a cream
+ * (#e2c063). The orange "San Andreas" headings people remember are from
+ * the loading screens and the wordmark -- the menu itself has none. */
+
+window { background-color: transparent; }
+
+#zt-panel {
+  margin: 42px;
+  background-color: rgba(0, 0, 0, 0.88);
+  border-radius: 0;
+  border: 1px solid rgba(111, 137, 170, 0.55);
+  box-shadow:
+    inset 0 0 0 4px rgba(111, 137, 170, 0.12),
+    0 3px 8px rgba(0, 0, 0, 0.55),
+    0 14px 30px rgba(0, 0, 0, 0.55);
+  padding: 12px 20px;
+  min-width: 240px;
+}
+
+#zt-label {
+  color: #accbf1;
+  font-family: "Selawik", Cantarell, "Noto Sans", sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+}
+
+#zt-accent  { color: #accbf1; }
+#zt-muted   { color: #4a5a6b; }
+#zt-success { color: #e2c063; }   /* the cream of mission text */
+#zt-meter   { color: #accbf1; }
+#zt-tile    { color: rgba(172, 203, 241, 0.16); }

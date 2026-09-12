@@ -44,8 +44,8 @@ window { background-color: transparent; }
   font-weight: 400;
 }
 
-#zt-accent  { color: #d40000; }   /* the counter's LED red */
+#zt-accent  { color: #ff0000; }   /* the counter's LED red */
 #zt-muted   { color: #6a6a6a; }
 #zt-success { color: #008000; }
-#zt-meter   { color: #0000d4; }   /* the "1" blue */
+#zt-meter   { color: #0000ff; }   /* the "1" blue */
 #zt-tile    { color: rgba(0, 0, 0, 0.14); }

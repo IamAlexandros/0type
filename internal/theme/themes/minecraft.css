@@ -40,6 +40,6 @@ window { background-color: transparent; }
 
 #zt-accent  { color: #3f3f3f; }
 #zt-muted   { color: #7a7a7a; }
-#zt-success { color: #3c8527; }   /* the XP-bar green */
+#zt-success { color: #80ff20; }   /* the XP level number */
 #zt-meter   { color: #555555; }
 #zt-tile    { color: rgba(85, 85, 85, 0.22); }

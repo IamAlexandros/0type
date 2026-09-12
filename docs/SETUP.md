@@ -906,3 +906,48 @@ program down.
 - **Pixel fonts are wide.** Press Start 2P at 11px overflowed the 300px
   content area in `teletext` -- the transcript clips rather than wraps,
   so it was legible but cramped. 10px with no extra tracking fits.
+
+## Getting the palettes right
+
+A pastiche lives on exact values -- Steam's #66c0f4, Facebook's #3b5998 --
+so the later themes were built from verified sources rather than memory
+or eyedropped screenshots. Primary artifacts where they exist: Steam's
+live shared_global.css, GoldSrc's TrackerScheme.res and steamscheme.res,
+gta-reversed's source constants, archived Facebook and Yahoo stylesheets
+and logo GIFs, the 1976 NASA Graphics Standards Manual, Minecraft texture
+values, and AppleWin's NTSC.cpp.
+
+That turned up several things that were confidently wrong, including one
+already committed:
+
+- **NASA worm red is not #fc3d21.** That's the meatball's red, from a
+  different mark and a different era. The worm is PMS 185 (~#e10027);
+  the 1976 manual gives it as 100 magenta + 100 yellow. The theme had
+  already shipped with the wrong red and was corrected.
+- **CS 1.6's menu text is grey**, #c8c8c8 to white. The gold #c4b550 is
+  only for armed controls. #ffa500 appears nowhere in the stock scheme
+  file; the "orange menu" people remember is probably a highlighted row.
+- **GTA San Andreas' menu headings are light blue** (#accbf1,
+  HUD_COLOUR_LIGHT_BLUE), not orange. The orange is the wordmark and the
+  loading screens.
+- **Yahoo's logo was red** (#ff0033) throughout 1999-2008, identical in
+  every archived GIF. It turned purple in 2009 -- which is what every
+  brand-palette site describes, and why the premise "old Yahoo = purple"
+  is half right: the purple in that era is the #9b72cf nav bar.
+- **Facebook's #edeff4 and #dfe3ee are post-2011.** The 2008 and 2010
+  stylesheets use #d8dfea.
+- **Solitaire's felt is #008000, not #008080.** The teal is the Windows
+  desktop, a different surface.
+- **Apple II green is #00c000** exactly, and no source found says which
+  phosphor the monitor used -- so the theme no longer claims "P1".
+
+Two were left deliberately incomplete rather than guessed: the PS1 CD
+player screen (no frame-accurate source held up, so `ps1` is the memory
+card manager only), and the exact Pokedex red, where the widely-copied
+#ee1515 traces only to user-submitted palette sites.
+
+One operational note: while researching PS1 material, tcrf.net served
+prompt-injection text to the research agent. It was ignored and only
+factual BIOS-revision details were taken from that page -- worth knowing
+that fan-wiki sources can carry that, since this is exactly the kind of
+task that fetches a lot of them.
