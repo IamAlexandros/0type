@@ -22,6 +22,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -157,6 +158,25 @@ func (r *Runner) run(command string, hook Hook, text string) error {
 	// written by the user in a config file, in shell syntax, and pipes and
 	// quoting are the point of allowing a command at all.
 	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+
+	// The timeout has to survive a hook that spawns children, and by
+	// default it doesn't. CommandContext kills only the process it
+	// started, and CombinedOutput waits for the output pipes to close --
+	// which a surviving grandchild holds open. A hook like
+	// `sh -c "sleep 10"` therefore ran to completion despite an 80ms
+	// timeout, and one that backgrounded something would have blocked a
+	// goroutine (and shutdown's Wait) indefinitely.
+	//
+	// So: put the hook in its own process group and kill the group, which
+	// reaches the children; and set WaitDelay so that even a process that
+	// somehow outlives the signal can't hold this call open past the
+	// deadline.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
+	cmd.WaitDelay = time.Second
+
 	cmd.Stdin = strings.NewReader(text)
 	cmd.Env = append(cmd.Environ(),
 		"ZEROTYPE_HOOK="+string(hook),

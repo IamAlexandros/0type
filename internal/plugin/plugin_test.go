@@ -161,3 +161,30 @@ func TestNewWithNoCommandsReturnsNilRunner(t *testing.T) {
 		})
 	}
 }
+
+// A hook that *forks* must still be killed at the timeout. This is a
+// separate case from TestFireTimesOut because a shell given a single
+// simple command usually execs it, replacing itself -- so killing the
+// shell happens to kill the sleep, and the bug stays hidden. Force a real
+// child and the original implementation ran the full ten seconds:
+// CommandContext killed only the shell, and CombinedOutput went on
+// waiting for output pipes the surviving child still held open.
+//
+// It passed on the development machine and failed in CI, which is exactly
+// the kind of difference this test exists to remove.
+func TestFireTimesOutWhenTheHookForks(t *testing.T) {
+	r, logs := newTestRunner(t, map[string]string{"on_stop": "sleep 10 & wait"}, WithTimeout(80*time.Millisecond))
+
+	start := time.Now()
+	r.Fire(HookStop, "")
+	r.Wait()
+	elapsed := time.Since(start)
+
+	if elapsed > 3*time.Second {
+		t.Errorf("forked hook was not killed at the timeout (took %s)", elapsed)
+	}
+	got := logs()
+	if len(got) != 1 || !strings.Contains(got[0], "timed out") {
+		t.Errorf("expected a timeout to be logged, got %v", got)
+	}
+}
