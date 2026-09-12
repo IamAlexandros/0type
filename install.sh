@@ -134,8 +134,58 @@ cp -R "$DIR/bin" "$DIR/lib" "$DIR/themes" "$PREFIX/"
 [ -d "$DIR/licenses" ] && cp -R "$DIR/licenses" "$PREFIX/"
 ln -sf "$PREFIX/bin/0type" "$BINDIR/0type"
 
+say "    installed $B$TAG$R"
+
+# --- the speech model ----------------------------------------------------
+#
+# Downloaded here rather than left as a "now run this" instruction: it is
+# the difference between one command and a checklist, and 0type cannot
+# transcribe a word without it. It's idempotent -- files already present
+# are checksummed and skipped -- so re-running the installer is cheap.
+
+if [ "${ZEROTYPE_SKIP_MODEL:-}" = "1" ]; then
+	warn "skipping the model download (ZEROTYPE_SKIP_MODEL=1); run '0type setup' before using it"
+else
+	step "Downloading the speech model (~650MB, once)"
+	"$PREFIX/bin/0type" setup || die "model download failed -- rerun '0type setup' to resume; finished files are kept"
+fi
+
+# --- start it, and offer to keep it started ------------------------------
+
+AUTOSTART="$HOME/.config/autostart/0type.desktop"
+install_autostart() {
+	mkdir -p "$(dirname "$AUTOSTART")"
+	cat >"$AUTOSTART" <<DESKTOP
+[Desktop Entry]
+Type=Application
+Name=0type
+Comment=Live voice-to-text overlay
+Exec=$BINDIR/0type --background
+Terminal=false
+X-GNOME-Autostart-enabled=true
+DESKTOP
+}
+
+# curl | sh leaves stdin pointing at the script, so an interactive
+# question has to come from the terminal directly. When there isn't one
+# (CI, a Dockerfile), don't ask and don't assume: just say what wasn't
+# done.
+if [ -r /dev/tty ] && [ -t 2 ]; then
+	printf '%s==>%s Start 0type automatically when you log in? [Y/n] ' "$GREEN" "$R"
+	read -r reply </dev/tty || reply=""
+	case "$reply" in
+	[Nn]*) say "    skipped -- create $AUTOSTART later if you change your mind" ;;
+	*) install_autostart; say "    yes: $AUTOSTART" ;;
+	esac
+else
+	say "${DIM}    (not a terminal, so not asking about autostart -- see the README)${R}"
+fi
+
+step "Starting 0type"
+"$BINDIR/0type" --background >/dev/null 2>&1 || true
+
 say ""
-say "${B}0type $TAG installed.${R}"
+say "${B}Done. 0type is running.${R}"
 say ""
 
 case ":$PATH:" in
@@ -148,15 +198,15 @@ case ":$PATH:" in
 esac
 
 cat <<EOF
-${B}Next:${R}
+${B}One thing left:${R} pick a key to talk with.
 
-  ${B}0type setup${R}      download the speech model (~650MB, once)
-  ${B}0type${R}            open the menu
+  GNOME:  Settings > Keyboard > Keyboard Shortcuts > Custom Shortcuts
+  KDE:    System Settings > Shortcuts > Custom Shortcuts
 
-Then bind a key to ${B}$BINDIR/0type toggle${R} --
-GNOME: Settings > Keyboard > Keyboard Shortcuts > Custom Shortcuts.
+  Command:  ${B}$BINDIR/0type toggle${R}
 
-Press it, talk, press it again: the text lands on your clipboard.
+Then press it, talk, and press it again -- your words are on the
+clipboard. Run ${B}0type${R} any time for the menu and forty themes.
 
-${DIM}Everything runs locally. No account, no network, no telemetry.${R}
+${DIM}Everything runs on your machine. No account, no telemetry.${R}
 EOF

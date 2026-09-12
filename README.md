@@ -2,177 +2,146 @@
 
 # 0type
 
-**Press a key. Talk. Press it again. The text is on your clipboard.**
-
-A live voice-to-text overlay for Linux that runs entirely on your own
-machine — no account, no network, no telemetry. One Go binary, no
-Electron.
+### Press a key. Talk. Press it again. Your words are on the clipboard.
 
 <img src="docs/images/hero.png" width="720" alt="0type transcribing speech in a small bar at the bottom of the screen">
 
+Voice typing for Linux that runs entirely on your own machine.<br>
+No account, no subscription, no internet. Nothing leaves your computer.
+
 </div>
+
+## Install
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/zalkanorr/0type/main/install.sh | sh
-0type setup     # downloads the speech model, ~650MB, once
 ```
 
-Installs into `~/.local/share/0type` and symlinks `~/.local/bin/0type`.
-No sudo, nothing else touched. Uninstalling is `rm -rf` on those two.
+That's it. It installs 0type, downloads the speech model, starts it, and
+offers to launch it when you log in. Then it tells you the one thing left
+to do: pick a key to talk with.
 
----
+<sub>Everything goes in `~/.local` — no sudo, nothing outside your home
+folder. Uninstalling is deleting two directories.</sub>
 
-## What it does
+## Using it
 
-Words appear **as you speak them**, not after you stop. Audio is captured
-in 16 kHz chunks, gated by a simple energy VAD, and fed to NVIDIA's
-Parakeet TDT model in a growing window that's re-decoded about once a
-second; successive decodes are reconciled by longest-common-prefix, so
-settled words stop moving while the tail keeps updating.
+**Press your key.** A small bar appears at the bottom of the screen.
 
-The transcript starts centred and slides left as it grows, never wrapping
-and never clearing. When you toggle off, the whole session goes to the
-clipboard at once — one copy, not one per sentence — and the bar tells
-you so before it disappears.
+**Talk.** The words show up as you say them, not after you stop.
 
-## Use
+**Press it again.** The bar disappears and everything you said is on your
+clipboard, ready to paste.
 
-Run `0type`. A menu opens in the middle of the screen; the command hands
-your terminal straight back, and 0type stays resident in the background.
+That's the whole thing. It works in any app — your editor, a browser, a
+chat box — because it's just the clipboard.
+
+Run `0type` on its own for a menu:
 
 <div align="center">
-<img src="docs/images/menu.png" width="480" alt="The 0type menu: Start dictation, Theme, Close menu, Quit 0type">
+<img src="docs/images/menu.png" width="480" alt="The 0type menu">
 </div>
 
-Then bind a key to `~/.local/bin/0type toggle` — on GNOME: *Settings →
-Keyboard → Keyboard Shortcuts → Custom Shortcuts*. That's the shortcut
-you'll actually use; the menu is for everything else.
-
-| Command | |
-| --- | --- |
-| `0type` | open the menu (starts 0type if it isn't running) |
-| `0type toggle` | start/stop dictating — **bind this to a key** |
-| `0type --background` | start resident and hidden; for autostart on login |
-| `0type setup` | download the speech model |
-| `0type themes` | list themes |
-| `0type config` | show the resolved config and where it came from |
-| `0type ui --theme X` | preview a theme without the model or microphone |
-| `0type listen` | live transcription to stdout, no window |
-
-## Themes
-
-**Forty built in.** Pick one from the menu and arrow through the list —
-each applies live as you move, Enter keeps it, Esc puts back the one you
-started with.
+## Forty themes
 
 <div align="center">
 <img src="docs/images/themes.png" width="900" alt="All forty 0type themes">
 </div>
 
-A theme is one plain GTK CSS file. Copy a built-in out of `themes/` to
-`~/.config/0type/themes/mine.css`, edit, and select it with
-`theme = "mine"` — a file there shadows a built-in of the same name.
+Open the menu, pick **Theme**, and arrow through them — each one applies
+instantly as you move, so you can see them all in about ten seconds.
+Enter keeps it, Esc puts back the one you started with.
 
-Besides the panel, a theme sets the colours the overlay *draws* with
-(`#zt-accent`, `#zt-muted`, `#zt-success`, `#zt-meter`, `#zt-tile`), and
-four things CSS can't express, via comment directives:
+They're more than colours. The Game Boy says `READY` and `SAVED!`, DOS
+answers with `1 file(s) copied.`, the Commodore 64 boots to `READY.`, and
+the Tamagotchi has a little creature living in it. The fonts are real
+too — genuine pixel type, a fourteen-segment calculator display, actual
+handwriting on the Polaroid.
+
+### Making your own
+
+A theme is a single CSS file. Copy one you like from `themes/` into
+`~/.config/0type/themes/`, change the colours, and select it in the menu.
+Yours appears in the list next to the built-in ones.
 
 ```css
-/* 0type-idle: READY
- * 0type-copied: SAVED!
- * 0type-mark: pixel
- * 0type-art:
- * ..#####..
- * .#.###.#.
- * .#######.
- * ..#...#..
+#zt-panel  { background-color: #1a1a21; border-radius: 26px; }
+#zt-label  { color: #ecedf5; font-size: 15px; }
+#zt-accent { color: #7a8cff; }
+
+/* 0type-idle: whenever you're ready
+ * 0type-copied: got it
  */
 ```
 
-That's how the Game Boy says `READY` instead of `Listening…`, DOS reports
-`1 file(s) copied.`, and the Tamagotchi gets a creature instead of a
-microphone. Preview as you write:
-`0type ui --theme ./mine.css --text "hello"`.
+Preview it while you work, without touching your microphone:
 
-Seven fonts ship inside the binary and are registered for 0type's process
-alone — nothing is installed into your system: Press Start 2P, Silkscreen,
-VT323, Caveat, DSEG14 (a real fourteen-segment display face), and Selawik
-regular/bold. All SIL Open Font License; texts in `licenses/`.
+```sh
+0type ui --theme ./mine.css --text "hello there"
+```
 
-## Configuration
+## Settings
 
-Optional, at `~/.config/0type/config.toml`. A missing file is fine; a
-*malformed* one is a loud error naming the line, rather than silently
-falling back to defaults.
+Optional, in `~/.config/0type/config.toml`:
 
 ```toml
 theme = "term"
 
 [hooks]
-on_copy = "wtype -"                        # type it into the focused window
-on_stop = "notify-send 0type 'copied'"
+on_copy = "wtype -"                      # type it out instead of copying
+on_stop = "notify-send 0type 'copied'"   # ping me when it's done
 ```
 
-### Plugins are shell commands
+**Hooks** are just shell commands. They get your text on stdin, run in the
+background, and can never break or slow down dictation. Handy ones: type
+straight into the focused window, append to a notes file, pipe it
+somewhere else.
 
-`on_start`, `on_final` (each finished sentence), `on_copy`, `on_stop`.
-Each gets the text on stdin and in `$ZEROTYPE_TEXT`, runs asynchronously,
-and is killed after 5s — a hook that fails or hangs is logged and can
-never break dictation. An unknown hook name is rejected at startup rather
-than silently never firing.
-
-There's no plugin API, ABI or versioning story on purpose: the useful
-extensions here are one-liners, and a shell command composes with
-everything you already have.
-
-## How it works
+## Handy commands
 
 | | |
 | --- | --- |
-| **Speech** | NVIDIA Parakeet TDT 0.6B v2, int8, via ONNX Runtime — no Python or PyTorch at runtime |
-| **Audio** | hand-written cgo binding to ALSA; capture on its own goroutine so a decode pass can't cause dropouts |
-| **UI** | GTK4 window drawn entirely with Cairo, made override-redirect through Xlib |
-| **Hotkey** | pidfile + `SIGUSR1`, because Wayland won't let an unfocused app grab a global key |
+| `0type` | the menu |
+| `0type toggle` | start/stop talking — **this is the one to bind to a key** |
+| `0type themes` | list every theme |
+| `0type config` | show your settings and where they came from |
+| `0type listen` | transcribe to the terminal, no window |
 
-The overlay is an X11 override-redirect window rather than a Wayland
-layer-shell surface because GNOME's Mutter doesn't implement layer-shell.
-That turned out to be *more* portable, not less: the same code works on
-GNOME, KDE and wlroots compositors, and natively on X11.
+## Questions
 
-[`docs/SETUP.md`](docs/SETUP.md) has the full engineering log, including
-the things that didn't work and why.
+**Does it work offline?** Yes, always. The model lives on your disk and
+nothing is ever sent anywhere.
 
-## Platform support
+**What does it need?** A Linux desktop with GTK4 and ALSA — that's almost
+any of them. Works on Wayland and X11, GNOME and KDE.
 
-| | |
-| --- | --- |
-| **Linux / Wayland** | ✅ what it's developed on (GNOME, via Xwayland) |
-| **Linux / X11** | ✅ should work unchanged — the overlay is already pure Xlib |
-| **BSD** | one audio backend away; everything else is portable |
-| **macOS / Windows** | needs a new window + audio layer; the engine, themes and sprites are portable Go |
+**How big is it?** The program is about 10MB. The speech model is 650MB
+and downloads once.
 
-Everything platform-bound lives in four files (ALSA capture, the X11 parts
-of the window, fontconfig registration, and the signal/lock plumbing). The
-streaming, decoding, theming and plugin packages are pure Go with no cgo
-at all.
+**Is it fast?** Words appear about a second behind you, on CPU. No GPU
+needed.
 
-## Build from source
+**Something's wrong.** Run `0type config` to see what it thinks your
+settings are. If your key stops working, `0type toggle` from a terminal
+will restart it and tell you what happened.
 
-Needs Go 1.25+ and GTK4 / ALSA / X11 / fontconfig development packages:
+## For the curious
+
+It's a single Go binary using NVIDIA's Parakeet speech model through ONNX
+Runtime, drawing its window with GTK4 and Cairo. If you want the whole
+story — how the streaming works, why the overlay is built the way it is,
+and everything that broke on the way — that's in
+[`docs/SETUP.md`](docs/SETUP.md).
+
+Building it yourself takes two commands:
 
 ```sh
-# Fedora
 sudo dnf install golang gtk4-devel alsa-lib-devel libX11-devel \
-                 fontconfig-devel onnxruntime-devel
-make build && ./bin/0type setup
+                 fontconfig-devel onnxruntime-devel     # or your distro's equivalent
+make build
 ```
-
-`make test` runs the suite; `make dist` builds the release tarball. See
-[`docs/SETUP.md`](docs/SETUP.md) for the toolchain notes.
 
 ## License
 
-Code under the MIT license. Bundled fonts are SIL Open Font License 1.1,
-with their license texts in `internal/ui/fonts/` and shipped in
-`licenses/`. The speech model is downloaded at setup time and carries its
-own license from its publisher.
+MIT. The bundled fonts are SIL Open Font License 1.1 — see
+[`LICENSE`](LICENSE).
