@@ -33,6 +33,92 @@ data from every platform, through one API.
 
 </div>
 
+## Set up your shortcut
+
+0type is driven by one command, `0type toggle`. Bind it to a key and you're
+done. Pick anything that's free — **Ctrl + Alt + Space** works well.
+
+**GNOME** — paste this into a terminal:
+
+```sh
+S=org.gnome.settings-daemon.plugins.media-keys
+P=/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/0type/
+L=$(gsettings get $S custom-keybindings)
+case "$L" in *"$P"*) ;; "@as []"|"[]") gsettings set $S custom-keybindings "['$P']" ;;
+  *) gsettings set $S custom-keybindings "${L%]}, '$P']" ;; esac
+gsettings set $S.custom-keybinding:$P name '0type'
+gsettings set $S.custom-keybinding:$P command "$HOME/.local/bin/0type toggle"
+gsettings set $S.custom-keybinding:$P binding '<Control><Alt>space'
+```
+
+It adds to your existing shortcuts rather than replacing them, and it's safe
+to run again. Change `<Control><Alt>space` if you'd like a different key.
+
+<details>
+<summary><b>GNOME, the clicking way</b></summary>
+
+1. Open **Settings → Keyboard → View and Customize Shortcuts**
+2. Scroll to **Custom Shortcuts** and click **Add Shortcut**
+3. Name: `0type`
+4. Command: the **full path**, e.g. `/home/you/.local/bin/0type toggle`<br>
+   <sub>GNOME doesn't expand `~` here. Run `echo ~/.local/bin/0type` to get yours.</sub>
+5. Click **Set Shortcut** and press your keys
+
+</details>
+
+<details>
+<summary><b>KDE Plasma</b></summary>
+
+1. Open **System Settings → Keyboard → Shortcuts**
+2. Click **Add New → Command or Script…**
+3. Command: `~/.local/bin/0type toggle`
+4. Set your key combination and **Apply**
+
+<sub>On Plasma 5 it's **System Settings → Shortcuts → Custom Shortcuts → Edit →
+New → Global Shortcut → Command/URL**.</sub>
+
+</details>
+
+<details>
+<summary><b>Hyprland</b></summary>
+
+Add to `~/.config/hypr/hyprland.conf`:
+
+```ini
+bind = CTRL ALT, SPACE, exec, ~/.local/bin/0type toggle
+```
+
+</details>
+
+<details>
+<summary><b>Sway / i3</b></summary>
+
+Add to `~/.config/sway/config` or `~/.config/i3/config`, then reload:
+
+```
+bindsym Ctrl+Mod1+space exec ~/.local/bin/0type toggle
+```
+
+</details>
+
+<details>
+<summary><b>XFCE</b></summary>
+
+1. Open **Settings → Keyboard → Application Shortcuts**
+2. Click **Add**, enter `~/.local/bin/0type toggle`
+3. Press your key combination
+
+</details>
+
+<details>
+<summary><b>Cinnamon</b></summary>
+
+1. Open **System Settings → Keyboard → Shortcuts**
+2. Click **Add custom shortcut**
+3. Name `0type`, command `~/.local/bin/0type toggle`
+4. Click the new entry's **Keyboard bindings** field and press your keys
+
+</details>
 
 ## Using it
 
@@ -150,6 +236,25 @@ sudo dnf install golang gtk4-devel alsa-lib-devel libX11-devel \
                  fontconfig-devel onnxruntime-devel     # or your distro's equivalent
 make build
 ```
+
+## A note from me
+
+This project is heavily vibe-coded.
+
+I built 0type for myself. I wanted voice typing on Linux that didn't suck,
+was fast, private, and actually nice to look at, and nothing I tried felt
+right, so I made my own. I use it every day.
+
+I've been a full-stack developer for 8+ years, and right now most of my time
+goes into [FetchLayer](https://fetchlayer.dev) and
+[AskAds](https://askads.ai). So instead of hand-crafting every line, I built
+this one fast and leaned on AI to do a lot of the heavy lifting. It works
+really well for me, but expect a few rough edges.
+
+If something breaks or you've got an idea, open an issue or a PR. I'll get to
+it when I can.
+
+— [Alexandros](https://github.com/IamAlexandros)
 
 ## License
 
