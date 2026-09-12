@@ -33,6 +33,89 @@ data from every platform, through one API.
 
 </div>
 
+## Using it
+
+**Press your key.** A small bar appears at the bottom of the screen.
+
+**Talk.** The words show up as you say them, not after you stop.
+
+**Press it again.** The bar disappears and everything you said is on your
+clipboard, ready to paste.
+
+That's the whole thing. It works in any app — your editor, a browser, a
+chat box — because it's just the clipboard.
+
+Run `0type` on its own for a menu:
+
+<div align="center">
+<img src="docs/images/menu.png" width="480" alt="The 0type menu">
+</div>
+
+## Forty themes
+
+<div align="center">
+<img src="docs/images/themes.png" width="900" alt="All forty 0type themes">
+</div>
+
+Open the menu, pick **Theme**, and arrow through them — each one applies
+instantly as you move, so you can see them all in about ten seconds.
+Enter keeps it, Esc puts back the one you started with.
+
+They're more than colours. The Game Boy says `READY` and `SAVED!`, DOS
+answers with `1 file(s) copied.`, the Commodore 64 boots to `READY.`, and
+the Tamagotchi has a little creature living in it. The fonts are real
+too — genuine pixel type, a fourteen-segment calculator display, actual
+handwriting on the Polaroid.
+
+### Making your own
+
+A theme is a single CSS file. Copy one you like from `themes/` into
+`~/.config/0type/themes/`, change the colours, and select it in the menu.
+Yours appears in the list next to the built-in ones.
+
+```css
+#zt-panel  { background-color: #1a1a21; border-radius: 26px; }
+#zt-label  { color: #ecedf5; font-size: 15px; }
+#zt-accent { color: #7a8cff; }
+
+/* 0type-idle: whenever you're ready
+ * 0type-copied: got it
+ */
+```
+
+Preview it while you work, without touching your microphone:
+
+```sh
+0type ui --theme ./mine.css --text "hello there"
+```
+
+## Settings
+
+Optional, in `~/.config/0type/config.toml`:
+
+```toml
+theme = "term"
+
+[hooks]
+on_copy = "wtype -"                      # type it out instead of copying
+on_stop = "notify-send 0type 'copied'"   # ping me when it's done
+```
+
+**Hooks** are just shell commands. They get your text on stdin, run in the
+background, and can never break or slow down dictation. Handy ones: type
+straight into the focused window, append to a notes file, pipe it
+somewhere else.
+
+## Handy commands
+
+| | |
+| --- | --- |
+| `0type` | the menu |
+| `0type toggle` | start/stop talking — **this is the one to bind to a key** |
+| `0type themes` | list every theme |
+| `0type config` | show your settings and where they came from |
+| `0type listen` | transcribe to the terminal, no window |
+
 ## Set up your shortcut
 
 0type is driven by one command, `0type toggle`. Bind it to a key and you're
@@ -119,89 +202,6 @@ bindsym Ctrl+Mod1+space exec ~/.local/bin/0type toggle
 4. Click the new entry's **Keyboard bindings** field and press your keys
 
 </details>
-
-## Using it
-
-**Press your key.** A small bar appears at the bottom of the screen.
-
-**Talk.** The words show up as you say them, not after you stop.
-
-**Press it again.** The bar disappears and everything you said is on your
-clipboard, ready to paste.
-
-That's the whole thing. It works in any app — your editor, a browser, a
-chat box — because it's just the clipboard.
-
-Run `0type` on its own for a menu:
-
-<div align="center">
-<img src="docs/images/menu.png" width="480" alt="The 0type menu">
-</div>
-
-## Forty themes
-
-<div align="center">
-<img src="docs/images/themes.png" width="900" alt="All forty 0type themes">
-</div>
-
-Open the menu, pick **Theme**, and arrow through them — each one applies
-instantly as you move, so you can see them all in about ten seconds.
-Enter keeps it, Esc puts back the one you started with.
-
-They're more than colours. The Game Boy says `READY` and `SAVED!`, DOS
-answers with `1 file(s) copied.`, the Commodore 64 boots to `READY.`, and
-the Tamagotchi has a little creature living in it. The fonts are real
-too — genuine pixel type, a fourteen-segment calculator display, actual
-handwriting on the Polaroid.
-
-### Making your own
-
-A theme is a single CSS file. Copy one you like from `themes/` into
-`~/.config/0type/themes/`, change the colours, and select it in the menu.
-Yours appears in the list next to the built-in ones.
-
-```css
-#zt-panel  { background-color: #1a1a21; border-radius: 26px; }
-#zt-label  { color: #ecedf5; font-size: 15px; }
-#zt-accent { color: #7a8cff; }
-
-/* 0type-idle: whenever you're ready
- * 0type-copied: got it
- */
-```
-
-Preview it while you work, without touching your microphone:
-
-```sh
-0type ui --theme ./mine.css --text "hello there"
-```
-
-## Settings
-
-Optional, in `~/.config/0type/config.toml`:
-
-```toml
-theme = "term"
-
-[hooks]
-on_copy = "wtype -"                      # type it out instead of copying
-on_stop = "notify-send 0type 'copied'"   # ping me when it's done
-```
-
-**Hooks** are just shell commands. They get your text on stdin, run in the
-background, and can never break or slow down dictation. Handy ones: type
-straight into the focused window, append to a notes file, pipe it
-somewhere else.
-
-## Handy commands
-
-| | |
-| --- | --- |
-| `0type` | the menu |
-| `0type toggle` | start/stop talking — **this is the one to bind to a key** |
-| `0type themes` | list every theme |
-| `0type config` | show your settings and where they came from |
-| `0type listen` | transcribe to the terminal, no window |
 
 ## Questions
 
