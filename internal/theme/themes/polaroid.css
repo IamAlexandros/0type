@@ -1,0 +1,57 @@
+/* 0type "polaroid" -- an instant photo, chin and all.
+ *
+ * 0type-idle: say cheese
+ * 0type-copied: developed!
+ *
+ * The camera.
+ * 0type-art:
+ * ...##....
+ * #########
+ * #.#####.#
+ * #.##.##.#
+ * #.#####.#
+ * #########
+ * .........
+ *
+ * The defining feature of a Polaroid is the white border being *uneven*:
+ * thin on three sides and deep along the bottom, where you were meant to
+ * write. That's what this is -- a hard color stop puts the dark exposure
+ * across the top and leaves white below it, and an asymmetric padding
+ * drops the text into the white chin rather than onto the photo.
+ *
+ * The caption face is a handwriting one for the same reason: the chin was
+ * always written on by hand. */
+
+window { background-color: transparent; }
+
+#zt-panel {
+  margin: 42px;
+  background-image: linear-gradient(to bottom,
+    #2b2b2f 0px,
+    #3a3a40 26px,
+    #2f2f34 42px,
+    #fdfdf8 42px,
+    #fdfdf8 100%);
+  background-color: #fdfdf8;
+  border-radius: 2px;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.30),
+    0 12px 28px rgba(0, 0, 0, 0.38);
+  /* Text sits in the white chin under the exposure. */
+  padding: 52px 18px 14px 18px;
+  min-width: 240px;
+}
+
+#zt-label {
+  color: #1d2340;
+  font-family: "Caveat", "Segoe Script", cursive;
+  font-size: 21px;
+  font-weight: 700;
+}
+
+#zt-accent  { color: #2a3566; }
+#zt-muted   { color: #8a8a92; }
+#zt-success { color: #1d6b3a; }
+#zt-meter   { color: #4a4a55; }
+#zt-tile    { color: rgba(0, 0, 0, 0.10); }

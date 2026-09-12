@@ -1,0 +1,49 @@
+/* 0type "msn" -- Messenger, and someone is typing.
+ *
+ * 0type-idle: Type a message
+ * 0type-copied: Message sent
+ *
+ * A speech bubble.
+ * 0type-art:
+ * .######.
+ * #......#
+ * #......#
+ * #......#
+ * .######.
+ * ..##....
+ * .#......
+ *
+ * The conversation window: a pale blue-white field, a thin blue frame,
+ * and rounded corners of the mid-2000s sort -- small, and on everything.
+ * MSN's own blue (#1e6fd9) carries the accent, and the confirmation is
+ * the green of an online contact, which is the only other color the app
+ * ever really used. */
+
+window { background-color: transparent; }
+
+#zt-panel {
+  margin: 42px;
+  background-image: linear-gradient(to bottom, #ffffff 0%, #eef5ff 100%);
+  background-color: #f4f9ff;
+  border-radius: 8px;
+  border: 1px solid #7da7d9;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.90),
+    0 2px 5px rgba(20, 60, 120, 0.22),
+    0 12px 28px rgba(20, 60, 120, 0.18);
+  padding: 10px 20px;
+  min-width: 240px;
+}
+
+#zt-label {
+  color: #14284a;
+  font-family: "Selawik", "Segoe UI", Cantarell, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+}
+
+#zt-accent  { color: #1e6fd9; }
+#zt-muted   { color: #7b8aa0; }
+#zt-success { color: #00a000; }   /* the online dot */
+#zt-meter   { color: #1e6fd9; }
+#zt-tile    { color: rgba(30, 111, 217, 0.12); }

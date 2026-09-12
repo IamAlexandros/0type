@@ -716,7 +716,9 @@ tarball's `licenses/`, as the license requires):
 - **Silkscreen** — a much smaller pixel face, closer to a phone or LCD
   cell: `nokia3310`, `tamagotchi`, `winamp`. Note it is uppercase-only,
   which happens to be authentic for all three.
-- **VT323** — terminal: `dos`.
+- **VT323** — terminal: `dos`, `bios`, `vhs`.
+- **Caveat** — handwriting, for the one place a UI font would be wrong:
+  the white chin of a Polaroid, which was always written on by hand.
 - **Selawik** — Microsoft's own metric-compatible substitute for Segoe
   UI, and the closest licensable thing to the MS UI look: `vista`,
   `winxp`, `win98`, `xbox`.
@@ -891,3 +893,16 @@ It's now two rows: "Close menu" (dismiss, keep running) and "Quit 0type"
 indices are named constants, because `case 2:` stops meaning anything the
 moment a row is inserted above it -- and one of these rows shuts the
 program down.
+
+## More CSS findings from the later themes
+
+- **`repeating-linear-gradient` works**, which is what gives `vhs` its
+  scanlines: one dark line every third pixel, layered over the background
+  gradient. Any tighter and the text turns to mush.
+- **Hard color stops make a layout, not just a pattern.** `polaroid`
+  drops the exposure across the top and leaves the white chin below it
+  with `#2f2f34 42px, #fdfdf8 42px`, then pushes the text into the chin
+  with an asymmetric `padding-top`. Same trick as the `winxp` title bar.
+- **Pixel fonts are wide.** Press Start 2P at 11px overflowed the 300px
+  content area in `teletext` -- the transcript clips rather than wraps,
+  so it was legible but cramped. 10px with no extra tracking fits.

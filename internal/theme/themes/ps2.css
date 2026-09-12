@@ -1,0 +1,55 @@
+/* 0type "ps2" -- the PlayStation 2 memory card browser.
+ *
+ * 0type-idle: Browser
+ * 0type-copied: Saved to memory card
+ *
+ * The card with a chip on the front.
+ * 0type-art:
+ * .######.
+ * .#....#.
+ * .#.##.#.
+ * .#.##.#.
+ * .#....#.
+ * .#....#.
+ * .#....#.
+ * .######.
+ *
+ * The browser sat on a deep blue field that faded to near-black at the
+ * bottom, with everything on it in a thin white sans -- the whole screen
+ * was that gradient, some text, and a lot of empty space. So: no border
+ * worth speaking of, no bevel, a wide radius, and type that's lighter
+ * than anything else here.
+ *
+ * Blue is the only color. The confirmation is white rather than green,
+ * because a green tick would be the first thing on that screen that
+ * wasn't blue. */
+
+window { background-color: transparent; }
+
+#zt-panel {
+  margin: 44px;
+  background-image: linear-gradient(to bottom, #12327e 0%, #0a1c4c 55%, #050b1e 100%);
+  background-color: #0a1c4c;
+  border-radius: 14px;
+  border: 1px solid rgba(150, 190, 255, 0.28);
+  box-shadow:
+    inset 0 1px 0 rgba(200, 225, 255, 0.22),
+    0 3px 8px rgba(0, 0, 0, 0.45),
+    0 14px 34px rgba(0, 0, 0, 0.50);
+  padding: 11px 22px;
+  min-width: 240px;
+}
+
+#zt-label {
+  color: #e6eeff;
+  font-family: "Selawik", Cantarell, "Noto Sans", sans-serif;
+  font-size: 15px;
+  font-weight: 300;
+  letter-spacing: 0.4px;
+}
+
+#zt-accent  { color: #9fc4ff; }
+#zt-muted   { color: rgba(170, 195, 240, 0.62); }
+#zt-success { color: #ffffff; }
+#zt-meter   { color: #9fc4ff; }
+#zt-tile    { color: rgba(160, 200, 255, 0.14); }

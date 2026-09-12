@@ -90,18 +90,22 @@ that fails or hangs is logged and killed. The hooks are `on_start`,
 
 ## Themes
 
-Eighteen are built in.
+Twenty-four are built in.
 
 *Plain:* `default` (dark, glassy), `light`, `mono` (grayscale).
 
 *Terminals:* `term` (green phosphor), `amber` (amber CRT), `dos` (CGA text
-mode), `c64` (the Commodore boot screen).
+mode), `c64` (the Commodore boot screen), `bios` (setup, F10 to save),
+`teletext` (Ceefax page 100).
 
 *Desktops:* `win98`, `winxp` (an actual window, title bar and all),
 `vista` (Aero glass), `macclassic` (System 6, black on white), `aqua`
 (Mac OS X lozenge), `discord`.
 
-*Devices:* `gameboy`, `nokia3310`, `tamagotchi`, `winamp`, `xbox`.
+*Devices:* `gameboy`, `nokia3310`, `tamagotchi`, `winamp`, `xbox`, `ps2`
+(the memory card browser), `vhs` (scanlines and all).
+
+*Other:* `msn` (Messenger), `polaroid` (a photo with a chin to write on).
 
 They set their own wording too, so the Game Boy says READY and SAVED!
 where DOS says `C:\>` and `1 file(s) copied.`
@@ -133,9 +137,9 @@ and its own sprite — up to 16×16, drawn in the comment itself:
 That's how the Tamagotchi gets a creature instead of a microphone, the
 Xbox its jewel, Winamp its bolt, and DOS its prompt.
 
-Five fonts are embedded in the binary and registered for 0type alone
+Six fonts are embedded in the binary and registered for 0type alone
 (nothing is installed into your system): Press Start 2P, Silkscreen,
-VT323, and Selawik regular/bold — all SIL Open Font License, with the
+VT323, Caveat, and Selawik regular/bold — all SIL Open Font License, with the
 license texts in `licenses/` in the tarball.
 Preview as you go with `0type ui --theme ./mine.css --text "hello"`.
 

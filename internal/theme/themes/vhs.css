@@ -1,0 +1,57 @@
+/* 0type "vhs" -- tracking, please stand by.
+ *
+ * 0type-idle: ▶ PLAY
+ * 0type-copied: ■ STOP
+ *
+ * The tape, two reels and all.
+ * 0type-art:
+ * ##########
+ * #........#
+ * #.##..##.#
+ * #.##..##.#
+ * #........#
+ * ##########
+ *
+ * The on-screen display of a VCR: chunky white-blue type over black,
+ * with scanlines. The scanlines are a repeating-linear-gradient laid over
+ * the background -- one dark line every third pixel, which is enough to
+ * read as a CRT without turning the text to mush.
+ *
+ * The slight blue cast and the soft glow are the tape, not the screen:
+ * the picture was never quite clean and never quite still. */
+
+window { background-color: transparent; }
+
+#zt-panel {
+  margin: 44px;
+  background-image:
+    repeating-linear-gradient(to bottom,
+      rgba(0, 0, 0, 0.34) 0px,
+      rgba(0, 0, 0, 0.34) 1px,
+      rgba(0, 0, 0, 0.0) 1px,
+      rgba(0, 0, 0, 0.0) 3px),
+    linear-gradient(to bottom, #101a2a 0%, #05080f 100%);
+  background-color: #05080f;
+  border-radius: 4px;
+  border: 1px solid rgba(150, 200, 255, 0.20);
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.55),
+    0 12px 30px rgba(0, 0, 0, 0.60),
+    0 0 26px rgba(120, 180, 255, 0.16);
+  padding: 11px 20px;
+  min-width: 240px;
+}
+
+#zt-label {
+  color: #dbe9ff;
+  font-family: "VT323", "Adwaita Mono", monospace;
+  font-size: 19px;
+  font-weight: 400;
+  letter-spacing: 1px;
+}
+
+#zt-accent  { color: #7fc4ff; }
+#zt-muted   { color: #5f7fa8; }
+#zt-success { color: #ff5f5f; }   /* the red of a record light */
+#zt-meter   { color: #dbe9ff; }
+#zt-tile    { color: rgba(190, 220, 255, 0.12); }
