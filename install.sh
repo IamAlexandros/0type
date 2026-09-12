@@ -181,11 +181,18 @@ else
 	say "${DIM}    (not a terminal, so not asking about autostart -- see the README)${R}"
 fi
 
-step "Starting 0type"
-"$BINDIR/0type" --background >/dev/null 2>&1 || true
-
+# Only claim it's running if it can be. Without the model it starts, fails
+# to load, and exits a moment later -- announcing "running" over that
+# would be the installer's last message and a wrong one.
 say ""
-say "${B}Done. 0type is running.${R}"
+if [ "${ZEROTYPE_SKIP_MODEL:-}" = "1" ]; then
+	say "${B}Installed.${R} Run ${B}0type setup${R} to fetch the speech model, then ${B}0type${R} to start."
+else
+	step "Starting 0type"
+	"$BINDIR/0type" --background >/dev/null 2>&1 || true
+	say ""
+	say "${B}Done. 0type is running.${R}"
+fi
 say ""
 
 case ":$PATH:" in
