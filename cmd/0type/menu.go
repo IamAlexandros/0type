@@ -4,9 +4,9 @@ import (
 	"log"
 	"time"
 
-	"github.com/zalkanorr/0type/internal/config"
-	"github.com/zalkanorr/0type/internal/theme"
-	"github.com/zalkanorr/0type/internal/ui"
+	"github.com/IamAlexandros/0type/internal/config"
+	"github.com/IamAlexandros/0type/internal/theme"
+	"github.com/IamAlexandros/0type/internal/ui"
 )
 
 // menuPage is which list the menu is currently showing.

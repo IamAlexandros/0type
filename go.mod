@@ -1,4 +1,4 @@
-module github.com/zalkanorr/0type
+module github.com/IamAlexandros/0type
 
 go 1.25.9
 

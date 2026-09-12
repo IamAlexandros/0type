@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zalkanorr/0type/internal/audio"
-	"github.com/zalkanorr/0type/internal/modelstore"
-	"github.com/zalkanorr/0type/internal/wav"
+	"github.com/IamAlexandros/0type/internal/audio"
+	"github.com/IamAlexandros/0type/internal/modelstore"
+	"github.com/IamAlexandros/0type/internal/wav"
 )
 
 // TestTranscribe_GoldenFile runs the full pipeline (feature extraction,

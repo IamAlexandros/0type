@@ -14,7 +14,7 @@ No account, no subscription, no internet. Nothing leaves your computer.
 ## Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/zalkanorr/0type/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/IamAlexandros/0type/main/install.sh | sh
 ```
 
 That's it. It installs 0type, downloads the speech model, starts it, and

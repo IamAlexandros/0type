@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"syscall"
 
-	"github.com/zalkanorr/0type/internal/toggle"
+	"github.com/IamAlexandros/0type/internal/toggle"
 )
 
 // runToggle asks a running `0type` instance to show/hide its window. It

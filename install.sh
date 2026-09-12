@@ -1,7 +1,7 @@
 #!/bin/sh
 # 0type installer.
 #
-#   curl -fsSL https://raw.githubusercontent.com/zalkanorr/0type/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/IamAlexandros/0type/main/install.sh | sh
 #
 # Downloads the latest release, verifies its checksum, and installs into
 # your home directory. No sudo, nothing outside these two paths:
@@ -13,7 +13,7 @@
 # separately by `0type setup` into ~/.cache/0type.
 set -eu
 
-REPO="zalkanorr/0type"
+REPO="IamAlexandros/0type"
 PREFIX="${PREFIX:-$HOME/.local/share/0type}"
 BINDIR="${BINDIR:-$HOME/.local/bin}"
 

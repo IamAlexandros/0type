@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/zalkanorr/0type/internal/config"
-	"github.com/zalkanorr/0type/internal/plugin"
-	"github.com/zalkanorr/0type/internal/theme"
+	"github.com/IamAlexandros/0type/internal/config"
+	"github.com/IamAlexandros/0type/internal/plugin"
+	"github.com/IamAlexandros/0type/internal/theme"
 )
 
 // runThemes lists every theme that can be named in the config file or

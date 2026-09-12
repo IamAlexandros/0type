@@ -6,11 +6,11 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/zalkanorr/0type/internal/asr"
-	"github.com/zalkanorr/0type/internal/audio"
-	"github.com/zalkanorr/0type/internal/modelstore"
-	"github.com/zalkanorr/0type/internal/stream"
-	"github.com/zalkanorr/0type/internal/wav"
+	"github.com/IamAlexandros/0type/internal/asr"
+	"github.com/IamAlexandros/0type/internal/audio"
+	"github.com/IamAlexandros/0type/internal/modelstore"
+	"github.com/IamAlexandros/0type/internal/stream"
+	"github.com/IamAlexandros/0type/internal/wav"
 )
 
 const (

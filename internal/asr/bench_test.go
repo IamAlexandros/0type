@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zalkanorr/0type/internal/audio"
-	"github.com/zalkanorr/0type/internal/modelstore"
-	"github.com/zalkanorr/0type/internal/wav"
+	"github.com/IamAlexandros/0type/internal/audio"
+	"github.com/IamAlexandros/0type/internal/modelstore"
+	"github.com/IamAlexandros/0type/internal/wav"
 )
 
 // BenchmarkTranscribe_Warm measures per-call Transcribe latency once the

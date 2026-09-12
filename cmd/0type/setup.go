@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/zalkanorr/0type/internal/modelstore"
+	"github.com/IamAlexandros/0type/internal/modelstore"
 )
 
 // runSetup downloads (or verifies the checksum of) every file the ASR

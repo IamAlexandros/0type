@@ -4,9 +4,9 @@ import (
 	"flag"
 	"fmt"
 
-	"github.com/zalkanorr/0type/internal/config"
-	"github.com/zalkanorr/0type/internal/theme"
-	"github.com/zalkanorr/0type/internal/ui"
+	"github.com/IamAlexandros/0type/internal/config"
+	"github.com/IamAlexandros/0type/internal/theme"
+	"github.com/IamAlexandros/0type/internal/ui"
 )
 
 // runUI shows the floating overlay window in its idle state, with no live
