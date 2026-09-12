@@ -37,23 +37,24 @@ func runToggle(args []string) error {
 		return nil
 	}
 
-	if startErr := startDaemonDictating(); startErr != nil {
+	if startErr := startDaemon("--dictate"); startErr != nil {
 		return fmt.Errorf("0type wasn't running and couldn't be started: %w", startErr)
 	}
 	fmt.Fprintln(os.Stderr, "0type wasn't running; starting it (the speech model takes a few seconds to load)")
 	return nil
 }
 
-// startDaemonDictating launches 0type detached, told to begin dictating
-// as soon as its model is ready -- because the person pressing the
-// shortcut wants to talk, not to be shown a menu.
-func startDaemonDictating() error {
+// startDaemon launches the resident 0type process, detached, with
+// whatever start-up behaviour the caller wants (`--dictate` from the
+// toggle, because whoever pressed the shortcut wants to talk, not to read
+// a menu; nothing at all for the plain menu).
+func startDaemon(extra ...string) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("locate the 0type binary: %w", err)
 	}
 
-	cmd := exec.Command(exe, "--dictate")
+	cmd := exec.Command(exe, append([]string{"--daemon"}, extra...)...)
 	// Its own session, so it outlives the shell (or the keybinding's
 	// transient scope) that started it.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}

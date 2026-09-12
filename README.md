@@ -41,9 +41,17 @@ Run it:
 ```
 
 A menu appears in the middle of the screen: **Start dictation**, **Theme**,
-**Quit**. Drive it with ↑/↓, Enter, and Esc. 0type stays running in the
-background afterwards, so running `0type` again just brings the menu back
-rather than loading the model a second time.
+**Close menu**, **Quit 0type**. Drive it with ↑/↓, Enter, and Esc.
+
+The command returns your terminal straight away — 0type starts itself in
+the background and stays there, so running `0type` again just brings the
+menu back rather than loading the model a second time. *Close menu* puts
+the menu away and leaves it running; *Quit 0type* stops it entirely, so
+the next shortcut press has to load the model again.
+
+To have it ready from login, autostart `0type --background`: resident and
+invisible, with nothing on screen and the microphone closed until you
+press the shortcut.
 
 Then bind a key to `0type toggle` — on GNOME: *Settings → Keyboard →
 Keyboard Shortcuts → Custom Shortcuts*, with the command set to the full
@@ -54,7 +62,8 @@ text is on your clipboard, ready to paste.
 
 | Command | What it does |
 | --- | --- |
-| `0type` | open the menu (add `--theme NAME` to override the config) |
+| `0type` | open the menu, starting 0type if needed (add `--theme NAME`) |
+| `0type --background` | start resident and hidden — for autostart |
 | `0type toggle` | show/hide the running overlay — bind this to a key |
 | `0type setup` | download the speech model |
 | `0type themes` | list available themes |

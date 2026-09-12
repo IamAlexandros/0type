@@ -40,26 +40,24 @@ func runApp(args []string) error {
 	// out of the way: no menu, no microphone, nothing on screen until the
 	// toggle shortcut asks for something.
 	backgroundFlag := fs.Bool("background", false, "start hidden: no menu, no dictation, just wait for the toggle")
+	// The resident process runs with this; you are not expected to type
+	// it. Everything else here is a front end that talks to that process
+	// and returns immediately -- see frontEnd.
+	daemonFlag := fs.Bool("daemon", false, "run the resident process in the foreground (started for you by `0type`)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	// A second `0type` must not load a second copy of the model (seconds
-	// of startup, hundreds of MB); it asks the instance that's already
-	// running to show its menu instead.
-	if err := toggle.SendMenu(); err == nil {
-		return nil
+	if !*daemonFlag {
+		return frontEnd(*themeFlag, *dictateFlag, *backgroundFlag)
 	}
 
-	// Nothing answered, but an instance may still be starting up and not
-	// yet listening. The lock is what makes that case visible -- without
-	// it, every attempt during the model load looks like "nothing is
-	// running" and starts yet another copy.
+	// Only one resident process, ever. See toggle.Lock for why the pidfile
+	// can't enforce this by itself.
 	release, err := toggle.Lock()
 	if err != nil {
 		if errors.Is(err, toggle.ErrAlreadyRunning) {
-			fmt.Fprintln(os.Stderr, "0type is already starting up; it'll be ready in a few seconds")
-			return nil
+			return nil // another instance beat us to it
 		}
 		return err
 	}
@@ -127,6 +125,48 @@ func runApp(args []string) error {
 	win.Run() // blocks until SIGINT/SIGTERM
 	a.stopPipeline()
 	hooks.Wait() // let an in-flight hook finish rather than killing it at exit
+	return nil
+}
+
+// frontEnd is what `0type` does when you run it: talk to the resident
+// process, starting it first if there isn't one, and return immediately.
+//
+// Running the resident process in the foreground of the terminal you
+// launched it from was wrong in the obvious way -- the shell sat there
+// until you pressed Ctrl+C, and closing the terminal took 0type with it.
+// A program you drive with a global shortcut should hand the terminal
+// straight back.
+func frontEnd(themeName string, dictate, background bool) error {
+	if _, err := toggle.RunningPID(); err == nil {
+		if background {
+			fmt.Fprintln(os.Stderr, "0type is already running")
+			return nil
+		}
+		if dictate {
+			return toggle.Send()
+		}
+		return toggle.SendMenu()
+	}
+
+	if toggle.Starting() {
+		fmt.Fprintln(os.Stderr, "0type is starting up; it'll be ready in a few seconds")
+		return nil
+	}
+
+	var extra []string
+	if themeName != "" {
+		extra = append(extra, "--theme", themeName)
+	}
+	switch {
+	case dictate:
+		extra = append(extra, "--dictate")
+	case background:
+		extra = append(extra, "--background")
+	}
+	if err := startDaemon(extra...); err != nil {
+		return err
+	}
+	fmt.Fprintln(os.Stderr, "starting 0type (the speech model takes a few seconds to load)")
 	return nil
 }
 

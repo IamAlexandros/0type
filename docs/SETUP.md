@@ -858,3 +858,36 @@ Three start modes, which is one per intent:
 - `0type --background` -- resident and invisible: no menu, no microphone,
   nothing on screen until the shortcut asks for something. This is the
   one to autostart on login.
+
+## The terminal is not a host for the daemon
+
+`0type` used to *be* the resident process: run it from a shell and the
+shell sat there until Ctrl+C, and closing the terminal killed 0type with
+it. That's wrong for something driven by a global shortcut.
+
+Now every user-facing form is a front end that returns immediately
+(measured at ~30ms) and the resident process is always a detached child:
+
+    0type              -> talk to the running instance, or start one, then exit
+    0type toggle       -> same, but starts it dictating
+    0type --background -> start it resident and invisible, then exit
+    0type --daemon     -> *be* the resident process (started for you)
+
+`--daemon` is the only form that blocks, and nothing is expected to type
+it. The front end distinguishes three states before acting: running (has
+a pidfile), starting (holds the lock but no pidfile yet, see
+toggle.Lock), or absent.
+
+## Two kinds of quit
+
+The root menu had one destructive row, "Quit 0type", two keystrokes from
+where the selection lands. Choosing it stops the resident process, after
+which the shortcut silently does nothing until something starts 0type
+again -- which is exactly the "the toggle doesn't work" report that
+kicked off the auto-start work above.
+
+It's now two rows: "Close menu" (dismiss, keep running) and "Quit 0type"
+(labelled "stops it running", so the consequence is on screen). The row
+indices are named constants, because `case 2:` stops meaning anything the
+moment a row is inserted above it -- and one of these rows shuts the
+program down.

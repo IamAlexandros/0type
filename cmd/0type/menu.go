@@ -111,14 +111,30 @@ func (a *app) closeMenu() {
 	a.win.SetCentered(false)
 }
 
+// Row indices in the root menu. Named because "case 2" stops meaning
+// anything the moment a row is inserted -- and one of these rows shuts
+// the program down.
+const (
+	rowDictate = iota
+	rowTheme
+	rowClose
+	rowQuit
+)
+
 // rootItems is the menu's top level. Deliberately short: this is a
 // dictation tool, and every row here is something a person might
 // plausibly want that isn't already a keyboard shortcut.
+//
+// Closing the menu and quitting 0type are separate rows because they are
+// wildly different actions that were previously one keystroke apart.
+// Quitting stops the resident process, so the next shortcut press has to
+// load the model again -- not what anyone means by "close this".
 func (a *app) rootItems() []ui.MenuItem {
 	return []ui.MenuItem{
 		{Label: "Start dictation", Detail: "⏎"},
 		{Label: "Theme", Detail: a.themeName},
-		{Label: "Quit 0type", Detail: ""},
+		{Label: "Close menu", Detail: "esc"},
+		{Label: "Quit 0type", Detail: "stops it running"},
 	}
 }
 
@@ -182,7 +198,7 @@ func (a *app) handleMenuKey(k ui.Key) bool {
 		if a.menu.page == pageThemes {
 			a.previewTheme(a.menu.themeBefore) // backing out undoes the preview
 			a.menu.page = pageRoot
-			a.menu.selected = 1 // back on the "Theme" row they came from
+			a.menu.selected = rowTheme // back on the row they came from
 			a.renderMenu()
 			return true
 		}
@@ -208,16 +224,16 @@ func (a *app) activateMenuItem() {
 		}
 		a.themeName = chosen
 		a.menu.page = pageRoot
-		a.menu.selected = 1
+		a.menu.selected = rowTheme
 		a.renderMenu()
 		return
 	}
 
 	switch a.menu.selected {
-	case 0: // Start dictation
+	case rowDictate:
 		a.closeMenu()
 		a.showAndListen()
-	case 1: // Theme
+	case rowTheme:
 		a.menu.themes = theme.List()
 		a.menu.themeBefore = a.themeName
 		a.menu.page = pageThemes
@@ -229,7 +245,9 @@ func (a *app) activateMenuItem() {
 		}
 		a.renderMenu()
 		a.previewTheme(a.menu.themes[a.menu.selected].Name)
-	case 2: // Quit
+	case rowClose:
+		a.closeMenu()
+	case rowQuit:
 		a.closeMenu()
 		a.win.Quit()
 	}
