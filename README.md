@@ -24,6 +24,16 @@ to do: pick a key to talk with.
 <sub>Everything goes in `~/.local` — no sudo, nothing outside your home
 folder. Uninstalling is deleting two directories.</sub>
 
+<div align="center">
+
+<a href="https://fetchlayer.dev"><img src="docs/images/sponsor-fetchlayer.png" width="820" alt="Sponsored by FetchLayer - every social platform, one structured API"></a>
+
+0type is sponsored by **[FetchLayer](https://fetchlayer.dev)** — structured social
+data from every platform, through one API.
+
+</div>
+
+
 ## Using it
 
 **Press your key.** A small bar appears at the bottom of the screen.
