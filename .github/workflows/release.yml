@@ -1,0 +1,64 @@
+# Builds the release tarball that install.sh downloads.
+#
+# ONNX Runtime is fetched from Microsoft's own release rather than taken
+# from the runner's package set: it's dlopen'd at runtime and ships inside
+# the tarball, so the version people get should be one we chose, not
+# whatever the CI image happened to have that week.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  ORT_VERSION: "1.20.1"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-4-dev libasound2-dev libx11-dev libfontconfig1-dev pkg-config
+
+      - name: Fetch ONNX Runtime
+        run: |
+          url="https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz"
+          curl -fsSL "$url" -o ort.tgz
+          tar -xzf ort.tgz
+          echo "ORTLIB=$PWD/onnxruntime-linux-x64-${ORT_VERSION}/lib/libonnxruntime.so.${ORT_VERSION}" >>"$GITHUB_ENV"
+
+      - name: Test
+        # GOROOT is pinned in the Makefile for the dev machine, whose PATH
+        # `go` is a gccgo wrapper; on CI the toolchain from setup-go is the
+        # right one, so point the pin at it.
+        run: make test GOROOT="$(go env GOROOT)"
+
+      - name: Build tarball
+        run: make dist GOROOT="$(go env GOROOT)" ORTLIB="$ORTLIB"
+
+      - name: Checksums
+        run: |
+          cd dist
+          sha256sum *.tar.gz >SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/SHA256SUMS
+          generate_release_notes: true
