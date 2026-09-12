@@ -98,10 +98,18 @@ static GtkWidget *new_box_vertical(void) {
 // Menu geometry, in the drawing area's logical pixels. MENU_ROW_H is
 // deliberately close to the bar's own height so the panel doesn't change
 // character between modes.
-#define MENU_MAX_ITEMS 16
+#define MENU_MAX_ITEMS 64
 #define MENU_ROW_H     30.0
 #define MENU_ROW_PAD    6.0
 #define MENU_RADIUS     8.0
+
+// At most this many rows are on screen at once; longer lists scroll. The
+// theme list alone is eighteen entries, which at MENU_ROW_H is taller
+// than the screen -- a menu that runs off the bottom of the display is
+// worse than no menu, since the rows you can't see are unreachable.
+#define MENU_MAX_VISIBLE 8
+#define MENU_SCROLL_W     3.0
+#define MENU_SCROLL_GAP   6.0
 
 typedef struct {
 	char *label;
@@ -166,6 +174,7 @@ typedef struct {
 	MenuItem menu[MENU_MAX_ITEMS];
 	int menu_count;
 	int menu_selected;
+	int menu_offset; // index of the first visible row (see menu_scroll_to)
 	double sel_y_current; // eased toward the selected row, so the highlight glides
 	double sel_y_target;
 	gboolean sel_started;
@@ -243,6 +252,10 @@ static const char *const MARK_PIXEL_CHECK[PIXEL_ROWS] = {
 
 // set_probe_color makes a color probe's themed CSS color the current Cairo
 // source, scaling its alpha by `alpha` (1.0 = exactly as the theme set it).
+// Defined below with the rest of the menu state handling, but needed by
+// the drawing code above it.
+static int menu_visible_rows(SlideState *s);
+
 static void set_probe_color(cairo_t *cr, GtkWidget *probe, double alpha) {
 	GdkRGBA c;
 	gtk_widget_get_color(probe, &c);
@@ -456,6 +469,11 @@ static void draw_content(GtkWidget *area, cairo_t *cr, int width, int height, Sl
 // having to know menus exist.
 static void draw_menu(GtkWidget *area, cairo_t *cr, int width, int height, SlideState *s) {
 	double x = MENU_ROW_PAD, w = width - 2 * MENU_ROW_PAD;
+	int visible = menu_visible_rows(s);
+	gboolean scrolling = s->menu_count > visible;
+	if (scrolling) {
+		w -= MENU_SCROLL_W + MENU_SCROLL_GAP; // leave the scrollbar its own lane
+	}
 
 	if (s->menu_count > 0) {
 		set_probe_color(cr, s->probe_accent, 0.16);
@@ -466,8 +484,8 @@ static void draw_menu(GtkWidget *area, cairo_t *cr, int width, int height, Slide
 	GdkRGBA text;
 	gtk_widget_get_color(area, &text);
 
-	for (int i = 0; i < s->menu_count; i++) {
-		double row_y = i * MENU_ROW_H;
+	for (int i = s->menu_offset; i < s->menu_count && i < s->menu_offset + visible; i++) {
+		double row_y = (i - s->menu_offset) * MENU_ROW_H;
 		gboolean selected = (i == s->menu_selected);
 
 		PangoLayout *layout = gtk_widget_create_pango_layout(area, s->menu[i].label);
@@ -497,6 +515,31 @@ static void draw_menu(GtkWidget *area, cairo_t *cr, int width, int height, Slide
 		pango_cairo_show_layout(cr, dl);
 		g_object_unref(dl);
 	}
+
+	if (!scrolling) {
+		return;
+	}
+
+	// A slim track with a proportional thumb, in the muted color: the only
+	// cue that there is more list than screen.
+	double track_x = width - MENU_ROW_PAD - MENU_SCROLL_W;
+	double track_h = visible * MENU_ROW_H - 8;
+	double track_y = 4;
+	set_probe_color(cr, s->probe_muted, 0.28);
+	rounded_rect(cr, track_x, track_y, MENU_SCROLL_W, track_h, MENU_SCROLL_W / 2);
+	cairo_fill(cr);
+
+	double frac = (double)visible / (double)s->menu_count;
+	double thumb_h = track_h * frac;
+	if (thumb_h < 12) {
+		thumb_h = 12;
+	}
+	double max_offset = s->menu_count - visible;
+	double progress = max_offset > 0 ? (double)s->menu_offset / max_offset : 0;
+	double thumb_y = track_y + progress * (track_h - thumb_h);
+	set_probe_color(cr, s->probe_accent, 0.85);
+	rounded_rect(cr, track_x, thumb_y, MENU_SCROLL_W, thumb_h, MENU_SCROLL_W / 2);
+	cairo_fill(cr);
 }
 
 static void slide_draw(GtkDrawingArea *area, cairo_t *cr, int width, int height, gpointer data) {
@@ -610,6 +653,7 @@ static void slide_show_confirmation(SlideState *s, const char *text) {
 }
 
 static void menu_clear(SlideState *s) {
+	s->menu_offset = 0;
 	for (int i = 0; i < s->menu_count; i++) {
 		g_free(s->menu[i].label);
 		g_free(s->menu[i].detail);
@@ -628,12 +672,43 @@ static void menu_add(SlideState *s, const char *label, const char *detail) {
 	s->menu_count++;
 }
 
+// menu_visible_rows is how many rows fit on screen at once.
+static int menu_visible_rows(SlideState *s) {
+	return s->menu_count < MENU_MAX_VISIBLE ? s->menu_count : MENU_MAX_VISIBLE;
+}
+
+// menu_scroll_to nudges the visible window just far enough to contain
+// index, and no further: the list only moves when the selection would
+// otherwise leave the screen, so short journeys don't scroll at all.
+static void menu_scroll_to(SlideState *s, int index) {
+	int visible = menu_visible_rows(s);
+	if (index < s->menu_offset) {
+		s->menu_offset = index;
+	} else if (index >= s->menu_offset + visible) {
+		s->menu_offset = index - visible + 1;
+	}
+	int max_offset = s->menu_count - visible;
+	if (max_offset < 0) {
+		max_offset = 0;
+	}
+	if (s->menu_offset > max_offset) {
+		s->menu_offset = max_offset;
+	}
+	if (s->menu_offset < 0) {
+		s->menu_offset = 0;
+	}
+}
+
 static void menu_set_selected(SlideState *s, int selected) {
 	if (selected < 0 || selected >= s->menu_count) {
 		return;
 	}
 	s->menu_selected = selected;
-	s->sel_y_target = selected * MENU_ROW_H;
+	menu_scroll_to(s, selected);
+	// The highlight is positioned within the *visible* window, so when the
+	// list scrolls the highlight stays put at the edge and the rows move
+	// under it -- which is what scrolling should look like.
+	s->sel_y_target = (selected - s->menu_offset) * MENU_ROW_H;
 	if (!s->sel_started) {
 		s->sel_started = TRUE;
 		s->sel_y_current = s->sel_y_target; // the first selection snaps; later ones glide
@@ -686,9 +761,10 @@ static void resize_to_content(GtkWidget *window, GtkWidget *panel) {
 static void menu_commit(SlideState *s, GtkWidget *window, GtkWidget *panel, int width, int selected) {
 	s->mode = MODE_MENU;
 	s->sel_started = FALSE;
+	s->menu_offset = 0;
 	menu_set_selected(s, selected);
 	gtk_drawing_area_set_content_width(GTK_DRAWING_AREA(s->area), width);
-	gtk_drawing_area_set_content_height(GTK_DRAWING_AREA(s->area), (int)(s->menu_count * MENU_ROW_H));
+	gtk_drawing_area_set_content_height(GTK_DRAWING_AREA(s->area), (int)(menu_visible_rows(s) * MENU_ROW_H));
 	resize_to_content(window, panel);
 }
 

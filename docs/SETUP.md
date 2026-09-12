@@ -796,3 +796,30 @@ Two fixes, because either alone leaves a sharp edge:
 Worth remembering that the *first* report of this was "the toggle is not
 working" and the second was "the menu doesn't open" -- two different
 symptoms, one race.
+
+## The menu scrolls
+
+Eighteen themes at MENU_ROW_H is taller than the screen, so the menu
+shows at most MENU_MAX_VISIBLE (8) rows and scrolls. Two details worth
+recording:
+
+- `MENU_MAX_ITEMS` was 16 while the theme list was 18. `menu_add`
+  silently dropped the overflow, so the last two themes were unreachable
+  *and* invisible -- no error, just a shorter list than the one
+  `0type themes` printed. It's 64 now, and the drawing code no longer
+  assumes the list fits.
+- The selection highlight is positioned within the *visible* window
+  rather than the whole list, so when scrolling the highlight stays put
+  at the top or bottom edge and the rows move underneath it. Animating
+  the highlight in list coordinates instead would have it slide off the
+  panel.
+
+The list only scrolls when the selection would otherwise leave the
+screen (`menu_scroll_to`), so moving between adjacent rows in the middle
+of the visible window doesn't move anything.
+
+`0type ui --menu --menu-selected N` renders the menu at any scroll
+position without the model or a keyboard grab, which is the only
+practical way to check this layout -- driving it by hand needs real key
+presses, and synthetic ones (`xdotool key`) trigger GNOME's
+remote-desktop prompt, which then holds a keyboard grab of its own.
