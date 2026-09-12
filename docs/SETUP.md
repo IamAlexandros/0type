@@ -823,3 +823,38 @@ position without the model or a keyboard grab, which is the only
 practical way to check this layout -- driving it by hand needs real key
 presses, and synthetic ones (`xdotool key`) trigger GNOME's
 remote-desktop prompt, which then holds a keyboard grab of its own.
+
+## One instance, and the startup stampede
+
+`0type toggle` starts 0type if nothing is running, because the command is
+almost always invoked from a keyboard shortcut where nobody sees stdout or
+an exit code. "Press the key, nothing happens, no explanation" is the
+worst possible failure, and it's reachable in completely ordinary ways:
+quitting from the menu, a crash, or just not having started 0type since
+logging in.
+
+That fix immediately caused a much worse bug. The pidfile is written only
+*after* the model loads -- deliberately, because a pidfile is a promise
+that signals will be handled, and signalling a half-initialized process
+would terminate it (SIGUSR1's default action). So for the ~12 seconds an
+instance spends loading, it is real but invisible to anything looking for
+a pidfile. Pressing the shortcut a few times during that window started a
+fresh instance per press, each loading its own copy of a 650MB model.
+
+The fix is an exclusive `flock` taken at the very top of `runApp`, before
+anything is loaded. A second instance fails to acquire it and exits
+immediately. `flock` is the right primitive because the kernel releases it
+however the process dies: no stale lock to clean up, no PID to check for
+reuse. `toggle.Starting()` uses the same lock to tell "still loading"
+apart from "not running", so repeated presses during startup say so
+instead of spawning anything.
+
+Three start modes, which is one per intent:
+
+- `0type` -- open the menu (and start 0type if needed).
+- `0type --dictate` -- start and go straight to dictating; what
+  `0type toggle` uses when it has to start 0type itself, because whoever
+  pressed the shortcut wants to talk, not to read a menu.
+- `0type --background` -- resident and invisible: no menu, no microphone,
+  nothing on screen until the shortcut asks for something. This is the
+  one to autostart on login.

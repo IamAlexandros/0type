@@ -1,9 +1,11 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"log"
+	"os"
 	"sync"
 	"time"
 
@@ -31,6 +33,13 @@ const copiedConfirmationHold = 850 * time.Millisecond
 func runApp(args []string) error {
 	fs := flag.NewFlagSet("0type", flag.ContinueOnError)
 	themeFlag := fs.String("theme", "", "theme name or path to a .css file (overrides the config file)")
+	// Set by `0type toggle` when it has to start 0type itself: whoever
+	// pressed the shortcut wants to dictate, not to read a menu.
+	dictateFlag := fs.Bool("dictate", false, "start dictating as soon as the model is loaded, instead of opening the menu")
+	// For starting 0type on login, or any time you want it resident and
+	// out of the way: no menu, no microphone, nothing on screen until the
+	// toggle shortcut asks for something.
+	backgroundFlag := fs.Bool("background", false, "start hidden: no menu, no dictation, just wait for the toggle")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -41,6 +50,20 @@ func runApp(args []string) error {
 	if err := toggle.SendMenu(); err == nil {
 		return nil
 	}
+
+	// Nothing answered, but an instance may still be starting up and not
+	// yet listening. The lock is what makes that case visible -- without
+	// it, every attempt during the model load looks like "nothing is
+	// running" and starts yet another copy.
+	release, err := toggle.Lock()
+	if err != nil {
+		if errors.Is(err, toggle.ErrAlreadyRunning) {
+			fmt.Fprintln(os.Stderr, "0type is already starting up; it'll be ready in a few seconds")
+			return nil
+		}
+		return err
+	}
+	defer release()
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -92,7 +115,14 @@ func runApp(args []string) error {
 	// Running `0type` with nothing else going on opens the menu, so the
 	// program is discoverable without knowing any of its subcommands or
 	// having set up a keybinding yet.
-	ui.RunOnMainThread(a.openMenu)
+	switch {
+	case *dictateFlag:
+		ui.RunOnMainThread(a.showAndListen)
+	case *backgroundFlag:
+		// Nothing: stay resident and invisible until toggled.
+	default:
+		ui.RunOnMainThread(a.openMenu)
+	}
 
 	win.Run() // blocks until SIGINT/SIGTERM
 	a.stopPipeline()

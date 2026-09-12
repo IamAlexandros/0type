@@ -57,7 +57,8 @@ func run(args []string) error {
 const usage = `0type -- live voice-to-text overlay
 
 Usage:
-  0type [--theme NAME]   run the overlay (show/hide it with ` + "`0type toggle`" + `)
+  0type [--theme NAME]   open the menu (starts 0type if it isn't running)
+  0type --background     start hidden and stay resident (for autostart)
   0type toggle           show or hide the running overlay; bind this to a key
   0type setup            download the speech model (~650MB, once)
 

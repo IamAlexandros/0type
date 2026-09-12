@@ -6,6 +6,7 @@
 package toggle
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -65,6 +66,11 @@ func send(sig syscall.Signal) error {
 	return nil
 }
 
+// ErrNotRunning means no live 0type instance was found -- distinct from
+// a real failure (an unreadable pidfile, a signal that was refused), so
+// callers can offer to start one instead of reporting an error.
+var ErrNotRunning = errors.New("no running 0type instance")
+
 // RunningPID returns the PID of the running 0type instance, or an error
 // if there isn't one. A pidfile left behind by a crashed instance is
 // reported as "not running" rather than as a live process: signalling a
@@ -77,7 +83,7 @@ func RunningPID() (int, error) {
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return 0, fmt.Errorf("toggle: no running instance found (is 0type running?): %w", err)
+		return 0, fmt.Errorf("toggle: %w (no pidfile at %s)", ErrNotRunning, path)
 	}
 	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
 	if err != nil {
@@ -89,7 +95,7 @@ func RunningPID() (int, error) {
 		return 0, fmt.Errorf("toggle: find process %d: %w", pid, err)
 	}
 	if err := proc.Signal(syscall.Signal(0)); err != nil {
-		return 0, fmt.Errorf("toggle: no running instance (stale pidfile for pid %d): %w", pid, err)
+		return 0, fmt.Errorf("toggle: %w (stale pidfile for pid %d)", ErrNotRunning, pid)
 	}
 	return pid, nil
 }
@@ -121,4 +127,71 @@ func on(sig syscall.Signal, handler func()) {
 			handler()
 		}
 	}()
+}
+
+// ErrAlreadyRunning means another instance holds the startup lock: it is
+// either running, or still starting up.
+var ErrAlreadyRunning = errors.New("0type is already running or starting")
+
+func lockFilePath() (string, error) {
+	dir, err := os.UserCacheDir()
+	if err != nil {
+		return "", fmt.Errorf("toggle: resolve cache dir: %w", err)
+	}
+	return filepath.Join(dir, "0type", "0type.lock"), nil
+}
+
+// Lock takes an exclusive, process-lifetime lock that only one instance
+// can hold, returning ErrAlreadyRunning if someone else has it.
+//
+// The pidfile can't do this job. It's written only once the model is
+// loaded and the signal handlers are installed -- deliberately, since a
+// pidfile is a promise that signals will be handled, and signalling a
+// half-initialized process would terminate it (SIGUSR1's default action).
+// That leaves a ~12 second window at startup in which the instance is
+// real but invisible to everything that looks for a pidfile, and anything
+// that starts 0type on demand will happily start another. Pressing a
+// shortcut a few times while the model loads was enough to spawn a pile
+// of instances, each loading its own copy of a 650MB model.
+//
+// flock is the right primitive here because the kernel drops it when the
+// process dies, however it dies: there is no stale lock to clean up, and
+// no PID to check for reuse.
+func Lock() (release func(), err error) {
+	path, err := lockFilePath()
+	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, fmt.Errorf("toggle: create lock dir: %w", err)
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return nil, fmt.Errorf("toggle: open lock file: %w", err)
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		f.Close()
+		if errors.Is(err, syscall.EWOULDBLOCK) {
+			return nil, ErrAlreadyRunning
+		}
+		return nil, fmt.Errorf("toggle: lock %s: %w", path, err)
+	}
+	return func() {
+		syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		f.Close()
+	}, nil
+}
+
+// Starting reports whether an instance holds the startup lock but hasn't
+// published a pidfile yet -- i.e. it's loading the model right now.
+func Starting() bool {
+	if _, err := RunningPID(); err == nil {
+		return false // past startup: it's ready
+	}
+	release, err := Lock()
+	if err != nil {
+		return errors.Is(err, ErrAlreadyRunning)
+	}
+	release() // nobody holds it, so nothing is starting
+	return false
 }
