@@ -4,10 +4,10 @@
 
 ### Press a key. Talk. Press it again. Your words are on the clipboard.
 
-<img src="docs/images/hero.png" width="720" alt="0type transcribing speech in a small bar at the bottom of the screen">
+<img src="docs/images/hero.png" width="720" alt="0type, offline speech-to-text for Linux, transcribing speech live in a small bar at the bottom of the screen">
 
-Voice typing for Linux that runs entirely on your own machine.<br>
-No account, no subscription, no internet. Nothing leaves your computer.
+Offline speech-to-text and voice typing for Linux, on Wayland and X11.<br>
+Runs entirely on your own machine. No account, no subscription, nothing leaves your computer.
 
 </div>
 
@@ -48,13 +48,13 @@ chat box — because it's just the clipboard.
 Run `0type` on its own for a menu:
 
 <div align="center">
-<img src="docs/images/menu.png" width="480" alt="The 0type menu">
+<img src="docs/images/menu.png" width="480" alt="The 0type menu: start dictation, change theme, close, quit">
 </div>
 
 ## Forty themes
 
 <div align="center">
-<img src="docs/images/themes.png" width="900" alt="All forty 0type themes">
+<img src="docs/images/themes.png" width="900" alt="All forty 0type themes, including Windows XP, Windows 98, Game Boy, DOS, Commodore 64, Minecraft and Steam styles">
 </div>
 
 Open the menu, pick **Theme**, and arrow through them — each one applies
@@ -220,6 +220,25 @@ needed.
 **Something's wrong.** Run `0type config` to see what it thinks your
 settings are. If your key stops working, `0type toggle` from a terminal
 will restart it and tell you what happened.
+
+## Similar projects
+
+0type isn't the only way to dictate on Linux. If it's not the right fit, these
+are worth a look:
+
+- **[Handy](https://github.com/cjpais/Handy)**: free, open source speech-to-text
+  for Windows, macOS and Linux
+- **[nerd-dictation](https://github.com/ideasman42/nerd-dictation)**: simple,
+  hackable offline speech-to-text using VOSK
+- **[voxtype](https://github.com/peteonrails/voxtype)**: push-to-talk
+  voice-to-text for Wayland compositors, using Whisper
+- **[hyprwhspr](https://github.com/goodroot/hyprwhspr)**: speech-to-text for
+  Linux on Wayland and X11, tuned for Nvidia GPUs
+- **[vocalinux](https://github.com/VocaHQ/vocalinux)**: offline voice dictation
+  with Whisper and VOSK, GPU-accelerated
+
+0type's own take: words appear live while you're still talking, transcription
+runs on NVIDIA's Parakeet model on your CPU, and it comes with forty themes.
 
 ## For the curious
 

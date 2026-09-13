@@ -1,0 +1,626 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>0type: offline speech-to-text and dictation for Linux</title>
+  <meta name="description" content="Voice typing for Linux that runs on your own machine. Press a key, talk, and your words are on the clipboard. Works on Wayland and X11. Free and open source.">
+  <link rel="canonical" href="https://iamalexandros.github.io/0type/">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <meta name="theme-color" content="#e8eaf0">
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="0type">
+  <meta property="og:title" content="0type: offline speech-to-text for Linux">
+  <meta property="og:description" content="Press a key, talk, and your words are on the clipboard. Runs on your own machine, on Wayland and X11.">
+  <meta property="og:url" content="https://iamalexandros.github.io/0type/">
+  <meta property="og:image" content="https://iamalexandros.github.io/0type/assets/social-preview.png">
+  <meta property="og:image:width" content="1280">
+  <meta property="og:image:height" content="640">
+  <meta property="og:image:alt" content="0type: offline speech-to-text for Linux. Press a key. Talk. Press it again.">
+  <meta name="twitter:card" content="summary_large_image">
+
+  <link rel="preload" href="assets/bricolage.woff2" as="font" type="font/woff2" crossorigin>
+  <script type="application/ld+json">
+[
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "0type",
+    "description": "Offline speech-to-text and voice typing for Linux. Press a key, talk, and your words are on the clipboard.",
+    "url": "https://iamalexandros.github.io/0type/",
+    "image": "https://iamalexandros.github.io/0type/assets/social-preview.png",
+    "applicationCategory": "UtilitiesApplication",
+    "operatingSystem": "Linux",
+    "softwareVersion": "0.1.0",
+    "downloadUrl": "https://github.com/IamAlexandros/0type/releases/latest",
+    "license": "https://opensource.org/licenses/MIT",
+    "isAccessibleForFree": true,
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "author": {
+      "@type": "Person",
+      "name": "Alexandros",
+      "url": "https://github.com/IamAlexandros"
+    },
+    "sameAs": [
+      "https://github.com/IamAlexandros/0type"
+    ]
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "Does it work offline?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes, always. The speech model lives on your disk and nothing you say is ever sent anywhere."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "What does it need?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "A Linux desktop with GTK4 and ALSA, which is almost any of them. It works on Wayland and X11."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Does it need a GPU?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "No. It runs on your CPU, and words appear about a second behind you."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "How big is it?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "The program is about 10 MB. The speech model is about 650 MB and downloads once, during install."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Is it free?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes. 0type is free and open source under the MIT license."
+        }
+      }
+    ]
+  }
+]
+  </script>
+  <style>
+    @font-face {
+      font-family: "Bricolage Grotesque";
+      src: url("assets/bricolage.woff2") format("woff2");
+      font-weight: 200 800;
+      font-stretch: 75% 100%;
+      font-display: swap;
+    }
+
+    :root {
+      --paper: #e8eaf0;       /* a desktop, not a page */
+      --paper-deep: #dde0e8;
+      --ink: #1b1c22;
+      --mist: #5d6270;
+      --rule: #cdd1da;
+      --link: #4650bd;
+      --bar: rgba(26, 26, 33, 0.94);
+      --bar-accent: #8c9eff;  /* the app's own accent */
+      --bar-text: #ecedf5;
+      --bar-muted: #80859a;
+      --bar-success: #8adbae;
+      --measure: 36rem;
+    }
+
+    * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font: 400 1.125rem/1.6 "Bricolage Grotesque", system-ui, sans-serif;
+      font-variation-settings: "opsz" 14;
+    }
+    a { color: var(--link); text-underline-offset: 0.18em; text-decoration-thickness: 1px; }
+    a:hover { text-decoration-thickness: 2px; }
+    :focus-visible { outline: 3px solid var(--link); outline-offset: 3px; border-radius: 6px; }
+
+    .wrap { max-width: 68rem; margin: 0 auto; padding: 0 1.5rem; }
+
+    header.site {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 1.5rem 0;
+    }
+    .wordmark {
+      color: var(--ink); text-decoration: none;
+      font-weight: 800; font-size: 1.6rem; letter-spacing: -0.01em;
+      font-variation-settings: "opsz" 96; line-height: 1;
+    }
+    .zero { height: 0.687em; width: 0.44em; vertical-align: -0.014em; margin-right: 0.035em; }
+    /* Running text is a much lighter weight than the wordmark. */
+    .brand .zero rect { stroke-width: 9; }
+    .brand .zero path { stroke-width: 7; }
+    .brand .zero { width: 0.42em; margin-right: 0.02em; }
+    .brand { white-space: nowrap; }
+    header.site nav a { color: var(--ink); font-weight: 600; text-decoration: none; }
+    header.site nav a:hover { text-decoration: underline; }
+
+    .hero { padding: 3.5rem 0 2.5rem; }
+    h1 {
+      margin: 0;
+      font-weight: 800;
+      font-size: clamp(2.75rem, 7.2vw, 5.4rem);
+      line-height: 0.98;
+      letter-spacing: -0.028em;
+      font-variation-settings: "opsz" 96;
+      max-width: 17ch;
+    }
+    h1 .keep { white-space: nowrap; }
+    .lede { max-width: var(--measure); margin: 1.5rem 0 2rem; font-size: 1.3rem; color: var(--mist); line-height: 1.5; }
+
+    .install {
+      display: flex; align-items: stretch; max-width: 56rem;
+      background: #1b1c22; color: #e6e7ee; border-radius: 14px; overflow: hidden;
+    }
+    .install code {
+      flex: 1; min-width: 0; padding: 1rem 1.25rem; overflow-x: auto; white-space: nowrap;
+      font: 0.95rem/1.5 ui-monospace, "SFMono-Regular", "DejaVu Sans Mono", Menlo, monospace;
+    }
+    .install button {
+      flex: none; border: 0; padding: 0 1.25rem; cursor: pointer;
+      background: #2c2d36; color: #fff; font: inherit; font-size: 1rem; font-weight: 600;
+    }
+    .install button:hover { background: #383a45; }
+    .install-note { margin: 0.85rem 0 0; color: var(--mist); font-size: 1rem; }
+
+    /* The stage is a screen; the bar sits near its bottom, where 0type puts it. */
+    .stage {
+      margin: 3rem 0 0;
+      position: relative;
+      height: clamp(15rem, 34vw, 22rem);
+      border-radius: 28px;
+      background: var(--paper-deep);
+      border: 1px solid var(--rule);
+      display: flex; align-items: flex-end; justify-content: center;
+      padding: 0 1rem clamp(1.75rem, 5vw, 3.25rem);
+    }
+    .bar {
+      appearance: none; border: 1px solid rgba(255, 255, 255, 0.07); cursor: pointer;
+      width: min(100%, 40rem);
+      display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 1.1rem;
+      padding: 0.95rem 1.6rem 0.95rem 1.05rem;
+      border-radius: 999px;
+      background: var(--bar);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 2px 4px rgba(0,0,0,0.25), 0 18px 44px rgba(17,19,34,0.35);
+      color: var(--bar-text);
+      font: 500 clamp(1rem, 2.4vw, 1.35rem)/1 "Inter", Cantarell, "Noto Sans", system-ui, sans-serif;
+    }
+    .tile {
+      width: 2.5rem; height: 2.5rem; border-radius: 0.7rem;
+      display: grid; place-items: center;
+      background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08);
+      color: var(--bar-accent);
+      transition: background-color 0.3s, color 0.3s;
+    }
+    .tile svg { width: 1.45rem; height: 1.45rem; }
+    .tile .check { display: none; }
+    .bar.done .tile { color: var(--bar-success); background: rgba(138,219,174,0.16); }
+    .bar.done .tile .mic { display: none; }
+    .bar.done .tile .check { display: block; }
+
+    .viewport {
+      overflow: hidden; height: 1.6em; display: flex; align-items: center;
+      -webkit-mask-image: linear-gradient(to right, transparent 0, #000 3.5em);
+              mask-image: linear-gradient(to right, transparent 0, #000 3.5em);
+    }
+    .line {
+      white-space: nowrap; will-change: transform;
+      transition: transform 0.38s cubic-bezier(0.2, 0.7, 0.2, 1), color 0.3s;
+    }
+    .line.idle { color: var(--bar-muted); font-weight: 400; }
+    .bar.done .line { color: var(--bar-success); }
+
+    .meter { display: flex; gap: 0.3rem; align-items: center; height: 1.8rem; }
+    .meter i {
+      display: block; width: 0.28rem; height: 0.7rem; border-radius: 1rem;
+      background: rgba(255,255,255,0.35);
+      transition: height 0.09s linear, background-color 0.2s;
+    }
+    .stage-note { margin: 0.9rem 0 0; color: var(--mist); font-size: 0.95rem; }
+
+    section { padding: 4.5rem 0 0; }
+    h2 {
+      margin: 0 0 1.25rem;
+      font-weight: 750; font-size: clamp(1.75rem, 3.4vw, 2.4rem);
+      line-height: 1.1; letter-spacing: -0.02em; font-variation-settings: "opsz" 72;
+    }
+    section > p { max-width: var(--measure); margin: 0 0 1rem; }
+
+    ol.steps {
+      list-style: none; counter-reset: step; margin: 2rem 0 0; padding: 0;
+      display: grid; gap: 2rem; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    }
+    ol.steps li { counter-increment: step; }
+    ol.steps li::before {
+      content: counter(step);
+      display: block; font-weight: 800; font-size: 3.2rem; line-height: 1;
+      font-variation-settings: "opsz" 96; color: var(--rule); margin-bottom: 0.4rem;
+    }
+    ol.steps strong { display: block; font-size: 1.25rem; margin-bottom: 0.25rem; }
+    ol.steps p { margin: 0; color: var(--mist); }
+
+    ul.themes {
+      list-style: none; margin: 2.25rem 0 0; padding: 0;
+      display: grid; gap: 2rem 1.5rem; grid-template-columns: repeat(auto-fill, minmax(min(13.5rem, 38vw), 1fr));
+    }
+    .theme { display: flex; flex-direction: column; align-items: center; gap: 0.35rem; }
+    .theme img { width: 100%; height: 6.25rem; object-fit: contain; }
+    .theme span { font-size: 0.95rem; color: var(--mist); }
+
+    dl.faq { margin: 1.5rem 0 0; max-width: 44rem; }
+    .qa { padding: 1.25rem 0; border-top: 1px solid var(--rule); }
+    .qa:last-child { border-bottom: 1px solid var(--rule); }
+    dt { font-weight: 700; font-size: 1.15rem; }
+    dd { margin: 0.3rem 0 0; color: var(--mist); }
+
+    footer.site {
+      margin-top: 5rem; padding: 2rem 0 3rem; border-top: 1px solid var(--rule);
+      display: flex; flex-wrap: wrap; gap: 0.5rem 2rem; justify-content: space-between;
+      color: var(--mist); font-size: 0.95rem;
+    }
+    footer.site p { margin: 0; }
+    footer.site nav { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; }
+
+    .visually-hidden {
+      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .line, .meter i, .tile { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="site">
+      <a class="wordmark" href="./" aria-label="0type home"><svg class="zero" viewBox="0 0 64 100" aria-hidden="true" focusable="false"><rect x="7.5" y="7.5" width="49" height="85" rx="24.5" fill="none" stroke="currentColor" stroke-width="15"/><path d="M22 70 L42 30" stroke="currentColor" stroke-width="11" stroke-linecap="round"/></svg>type</a>
+      <nav><a href="https://github.com/IamAlexandros/0type">GitHub</a></nav>
+    </header>
+
+    <main>
+      <div class="hero">
+        <h1>Offline <span class="keep">speech-to-text</span> for Linux.</h1>
+        <p class="lede">Press a key and talk. Your words show up while you're still speaking. Press it again, and everything you said is on your clipboard, ready to paste anywhere.</p>
+
+        <div class="install">
+          <code id="install-cmd">curl -fsSL https://raw.githubusercontent.com/IamAlexandros/0type/main/install.sh | sh</code>
+          <button type="button" id="copy" aria-describedby="install-cmd">Copy</button>
+        </div>
+        <p class="install-note">One command installs <span class="brand"><span class="visually-hidden">0</span><svg class="zero" viewBox="0 0 64 100" aria-hidden="true" focusable="false"><rect x="7.5" y="7.5" width="49" height="85" rx="24.5" fill="none" stroke="currentColor" stroke-width="15"/><path d="M22 70 L42 30" stroke="currentColor" stroke-width="11" stroke-linecap="round"/></svg><span aria-hidden="false">type</span></span> and its speech model, with no sudo. Free, open source, and nothing leaves your computer.</p>
+
+        <figure class="stage">
+          <button type="button" class="bar" id="demo" aria-label="Play the 0type demo again">
+            <span class="tile"><span class="mic"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"/><path d="M6 11a6 6 0 0 0 12 0M12 17v3.5M8.5 20.5h7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span><span class="check"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 12.5l4.2 4.2L19 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span></span>
+            <span class="viewport" aria-hidden="true"><span class="line idle" id="line">Listening…</span></span>
+            <span class="meter" aria-hidden="true"><i></i><i></i><i></i></span>
+          </button>
+          <figcaption class="visually-hidden">A demo of the 0type bar: words appear one by one as they are spoken, then the bar shows Copied to clipboard.</figcaption>
+        </figure>
+        <p class="stage-note">This is <span class="brand"><span class="visually-hidden">0</span><svg class="zero" viewBox="0 0 64 100" aria-hidden="true" focusable="false"><rect x="7.5" y="7.5" width="49" height="85" rx="24.5" fill="none" stroke="currentColor" stroke-width="15"/><path d="M22 70 L42 30" stroke="currentColor" stroke-width="11" stroke-linecap="round"/></svg><span aria-hidden="false">type</span></span>. Click the bar to play it again.</p>
+      </div>
+
+      <section aria-labelledby="how">
+        <h2 id="how">How it works</h2>
+        <ol class="steps">
+          <li><strong>Press your shortcut</strong><p>A small bar appears at the bottom of your screen.</p></li>
+          <li><strong>Talk</strong><p>Words appear as you say them, not after you stop.</p></li>
+          <li><strong>Press it again</strong><p>The bar disappears, and everything you said is on your clipboard.</p></li>
+        </ol>
+      </section>
+
+      <section aria-labelledby="themes">
+        <h2 id="themes">Forty themes</h2>
+        <p>Open the menu, choose Theme, and flick through them. Each one applies instantly. They change more than colors: the Game Boy says READY, DOS answers with “1 file(s) copied.”, and the Tamagotchi has a creature living in it. Or write your own in a single CSS file.</p>
+        <ul class="themes">
+        <li class="theme">
+          <img src="assets/themes/default.webp" width="560" height="148" loading="lazy" decoding="async" alt="0type in the Default theme">
+          <span>Default</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/amber.webp" width="560" height="139" loading="lazy" decoding="async" alt="0type in the Amber CRT theme">
+          <span>Amber CRT</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/apple2.webp" width="560" height="151" loading="lazy" decoding="async" alt="0type in the Apple II theme">
+          <span>Apple II</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/aqua.webp" width="560" height="123" loading="lazy" decoding="async" alt="0type in the Aqua theme">
+          <span>Aqua</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/bios.webp" width="560" height="138" loading="lazy" decoding="async" alt="0type in the BIOS setup theme">
+          <span>BIOS setup</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/macclassic.webp" width="560" height="130" loading="lazy" decoding="async" alt="0type in the Classic Mac theme">
+          <span>Classic Mac</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/clubpenguin.webp" width="560" height="142" loading="lazy" decoding="async" alt="0type in the Club Penguin theme">
+          <span>Club Penguin</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/c64.webp" width="560" height="162" loading="lazy" decoding="async" alt="0type in the Commodore 64 theme">
+          <span>Commodore 64</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/cs16.webp" width="560" height="132" loading="lazy" decoding="async" alt="0type in the Counter-Strike 1.6 theme">
+          <span>Counter-Strike 1.6</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/discord.webp" width="560" height="128" loading="lazy" decoding="async" alt="0type in the Discord theme">
+          <span>Discord</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/dos.webp" width="560" height="143" loading="lazy" decoding="async" alt="0type in the DOS theme">
+          <span>DOS</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/facebook.webp" width="560" height="188" loading="lazy" decoding="async" alt="0type in the Facebook 2008 theme">
+          <span>Facebook 2008</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/gameboy.webp" width="560" height="135" loading="lazy" decoding="async" alt="0type in the Game Boy theme">
+          <span>Game Boy</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/gtasa.webp" width="560" height="148" loading="lazy" decoding="async" alt="0type in the GTA San Andreas theme">
+          <span>GTA San Andreas</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/led.webp" width="560" height="153" loading="lazy" decoding="async" alt="0type in the LED calculator theme">
+          <span>LED calculator</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/light.webp" width="560" height="119" loading="lazy" decoding="async" alt="0type in the Light theme">
+          <span>Light</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/minecraft.webp" width="560" height="141" loading="lazy" decoding="async" alt="0type in the Minecraft theme">
+          <span>Minecraft</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/minesweeper.webp" width="560" height="123" loading="lazy" decoding="async" alt="0type in the Minesweeper theme">
+          <span>Minesweeper</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/mono.webp" width="560" height="128" loading="lazy" decoding="async" alt="0type in the Mono theme">
+          <span>Mono</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/mspaint.webp" width="560" height="139" loading="lazy" decoding="async" alt="0type in the MS Paint theme">
+          <span>MS Paint</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/msn.webp" width="560" height="121" loading="lazy" decoding="async" alt="0type in the MSN Messenger theme">
+          <span>MSN Messenger</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/nasa.webp" width="560" height="133" loading="lazy" decoding="async" alt="0type in the NASA worm theme">
+          <span>NASA worm</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/nokia3310.webp" width="560" height="149" loading="lazy" decoding="async" alt="0type in the Nokia 3310 theme">
+          <span>Nokia 3310</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/ps1.webp" width="560" height="142" loading="lazy" decoding="async" alt="0type in the PlayStation theme">
+          <span>PlayStation</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/ps2.webp" width="560" height="138" loading="lazy" decoding="async" alt="0type in the PlayStation 2 theme">
+          <span>PlayStation 2</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/pokedex.webp" width="560" height="140" loading="lazy" decoding="async" alt="0type in the Pokédex theme">
+          <span>Pokédex</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/polaroid.webp" width="560" height="235" loading="lazy" decoding="async" alt="0type in the Polaroid theme">
+          <span>Polaroid</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/solitaire.webp" width="560" height="129" loading="lazy" decoding="async" alt="0type in the Solitaire theme">
+          <span>Solitaire</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/steam.webp" width="560" height="137" loading="lazy" decoding="async" alt="0type in the Steam theme">
+          <span>Steam</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/steamgreen.webp" width="560" height="132" loading="lazy" decoding="async" alt="0type in the Steam classic theme">
+          <span>Steam classic</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/tamagotchi.webp" width="560" height="154" loading="lazy" decoding="async" alt="0type in the Tamagotchi theme">
+          <span>Tamagotchi</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/teletext.webp" width="560" height="145" loading="lazy" decoding="async" alt="0type in the Teletext theme">
+          <span>Teletext</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/term.webp" width="560" height="136" loading="lazy" decoding="async" alt="0type in the Terminal theme">
+          <span>Terminal</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/vhs.webp" width="560" height="143" loading="lazy" decoding="async" alt="0type in the VHS theme">
+          <span>VHS</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/winamp.webp" width="560" height="133" loading="lazy" decoding="async" alt="0type in the Winamp theme">
+          <span>Winamp</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/win98.webp" width="560" height="126" loading="lazy" decoding="async" alt="0type in the Windows 98 theme">
+          <span>Windows 98</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/vista.webp" width="560" height="138" loading="lazy" decoding="async" alt="0type in the Windows Vista theme">
+          <span>Windows Vista</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/winxp.webp" width="560" height="214" loading="lazy" decoding="async" alt="0type in the Windows XP theme">
+          <span>Windows XP</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/xbox.webp" width="560" height="149" loading="lazy" decoding="async" alt="0type in the Xbox theme">
+          <span>Xbox</span>
+        </li>
+        <li class="theme">
+          <img src="assets/themes/yahoo.webp" width="560" height="179" loading="lazy" decoding="async" alt="0type in the Yahoo! theme">
+          <span>Yahoo!</span>
+        </li>
+        </ul>
+      </section>
+
+      <section aria-labelledby="desktops">
+        <h2 id="desktops">Works on your desktop</h2>
+        <p><span class="brand"><span class="visually-hidden">0</span><svg class="zero" viewBox="0 0 64 100" aria-hidden="true" focusable="false"><rect x="7.5" y="7.5" width="49" height="85" rx="24.5" fill="none" stroke="currentColor" stroke-width="15"/><path d="M22 70 L42 30" stroke="currentColor" stroke-width="11" stroke-linecap="round"/></svg><span aria-hidden="false">type</span></span> runs on Wayland and X11. You can bind it to a key on GNOME, KDE Plasma, Hyprland, Sway, i3, XFCE and Cinnamon, and the <a href="https://github.com/IamAlexandros/0type#set-up-your-shortcut">setup steps for each</a> are in the README.</p>
+        <p>Speech recognition uses NVIDIA’s Parakeet model through ONNX Runtime, on your CPU. There’s no Python to install and no GPU needed.</p>
+      </section>
+
+      <section aria-labelledby="faq">
+        <h2 id="faq">Questions</h2>
+        <dl class="faq">
+        <div class="qa">
+          <dt>Does it work offline?</dt>
+          <dd>Yes, always. The speech model lives on your disk and nothing you say is ever sent anywhere.</dd>
+        </div>
+        <div class="qa">
+          <dt>What does it need?</dt>
+          <dd>A Linux desktop with GTK4 and ALSA, which is almost any of them. It works on Wayland and X11.</dd>
+        </div>
+        <div class="qa">
+          <dt>Does it need a GPU?</dt>
+          <dd>No. It runs on your CPU, and words appear about a second behind you.</dd>
+        </div>
+        <div class="qa">
+          <dt>How big is it?</dt>
+          <dd>The program is about 10 MB. The speech model is about 650 MB and downloads once, during install.</dd>
+        </div>
+        <div class="qa">
+          <dt>Is it free?</dt>
+          <dd>Yes. <span class="brand"><span class="visually-hidden">0</span><svg class="zero" viewBox="0 0 64 100" aria-hidden="true" focusable="false"><rect x="7.5" y="7.5" width="49" height="85" rx="24.5" fill="none" stroke="currentColor" stroke-width="15"/><path d="M22 70 L42 30" stroke="currentColor" stroke-width="11" stroke-linecap="round"/></svg><span aria-hidden="false">type</span></span> is free and open source under the MIT license.</dd>
+        </div>
+        </dl>
+      </section>
+    </main>
+
+    <footer class="site">
+      <p>Made by <a href="https://github.com/IamAlexandros">Alexandros</a>. Sponsored by <a href="https://fetchlayer.dev">FetchLayer</a>.</p>
+      <nav aria-label="Project">
+        <a href="https://github.com/IamAlexandros/0type">Source code</a>
+        <a href="https://github.com/IamAlexandros/0type/releases/latest">Download</a>
+        <a href="https://github.com/IamAlexandros/0type/blob/main/LICENSE">MIT license</a>
+      </nav>
+    </footer>
+  </div>
+
+  <script>
+    // Copy the install command.
+    (function () {
+      var btn = document.getElementById("copy");
+      var cmd = document.getElementById("install-cmd").textContent;
+      btn.addEventListener("click", function () {
+        var done = function () {
+          btn.textContent = "Copied";
+          setTimeout(function () { btn.textContent = "Copy"; }, 1800);
+        };
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText(cmd).then(done, function () { btn.textContent = "Select and copy"; });
+        }
+      });
+    })();
+
+    // The demo: the same behaviour as the real bar. Text starts centred,
+    // slides left once it overflows so the newest words stay in view, and
+    // the session ends on "Copied to clipboard".
+    (function () {
+      var bar = document.getElementById("demo");
+      var line = document.getElementById("line");
+      var viewport = line.parentNode;
+      var bars = bar.querySelectorAll(".meter i");
+      var words = "Press a key and talk, and your words show up while you're still speaking".split(" ");
+      var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      var timers = [];
+
+      function later(fn, ms) { timers.push(setTimeout(fn, ms)); }
+      function place() {
+        var room = viewport.clientWidth, width = line.scrollWidth;
+        var x = width <= room ? (room - width) / 2 : room - width;
+        line.style.transform = "translateX(" + x + "px)";
+      }
+      function level(on) {
+        var scale = [0.7, 1, 0.85];
+        for (var i = 0; i < bars.length; i++) {
+          var v = on ? 0.35 + Math.random() * 0.65 : 0;
+          bars[i].style.height = (0.7 + 1.1 * v * scale[i]) + "rem";
+          bars[i].style.backgroundColor = "rgba(255,255,255," + (0.35 + 0.4 * v) + ")";
+        }
+      }
+      function finalState() {
+        bar.classList.add("done");
+        line.classList.remove("idle");
+        line.textContent = "Copied to clipboard";
+        level(false);
+        place();
+      }
+      function play() {
+        timers.forEach(clearTimeout); timers = [];
+        bar.classList.remove("done");
+        line.classList.add("idle");
+        line.textContent = "Listening…";
+        place();
+        if (reduce) { finalState(); return; }
+
+        var t = 800, meter;
+        later(function () { meter = setInterval(function () { level(true); }, 95); timers.push(meter); }, t);
+        words.forEach(function (w, i) {
+          t += 190 + Math.random() * 90;
+          later(function () {
+            line.classList.remove("idle");
+            line.textContent = words.slice(0, i + 1).join(" ");
+            place();
+          }, t);
+        });
+        later(function () { clearInterval(meter); level(false); }, t + 450);
+        later(finalState, t + 1100);
+      }
+
+      bar.addEventListener("click", play);
+      window.addEventListener("resize", place);
+      if ("IntersectionObserver" in window) {
+        var seen = false;
+        new IntersectionObserver(function (entries, obs) {
+          if (!seen && entries[0].isIntersecting) { seen = true; obs.disconnect(); play(); }
+        }, { threshold: 0.6 }).observe(bar);
+      } else {
+        play();
+      }
+    })();
+  </script>
+</body>
+</html>
