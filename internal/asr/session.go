@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	ort "github.com/yalue/onnxruntime_go"
 )
@@ -85,6 +86,11 @@ func findLibrary() string {
 // a log-mel feature extractor, a Conformer encoder, and a combined
 // decoder+joint network.
 type Model struct {
+	// mu serializes Transcribe. The ONNX sessions are reused across calls
+	// and are not safe to Run concurrently, and a caller can easily cause
+	// that: ending a dictation session decodes the last buffered audio
+	// while the user may already have started the next one.
+	mu    sync.Mutex
 	mel   *ort.DynamicAdvancedSession
 	enc   *ort.DynamicAdvancedSession
 	dj    *ort.DynamicAdvancedSession
@@ -149,6 +155,8 @@ func (m *Model) Transcribe(waveform []float32) (string, error) {
 	if len(waveform) == 0 {
 		return "", nil
 	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
 	wIn, err := ort.NewTensor(ort.NewShape(1, int64(len(waveform))), waveform)
 	if err != nil {

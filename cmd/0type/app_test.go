@@ -16,3 +16,15 @@ func TestAppendSentence(t *testing.T) {
 		}
 	}
 }
+
+// An empty sentence adds nothing. Without this, joining "Hello." with an
+// empty in-progress sentence produced "Hello. " -- a stray trailing space
+// on every clipboard write where nothing was mid-sentence.
+func TestAppendSentenceEmptySentence(t *testing.T) {
+	if got := appendSentence("Hello.", ""); got != "Hello." {
+		t.Errorf("appendSentence(%q, \"\") = %q, want %q", "Hello.", got, "Hello.")
+	}
+	if got := appendSentence("", ""); got != "" {
+		t.Errorf("appendSentence(\"\", \"\") = %q, want empty", got)
+	}
+}

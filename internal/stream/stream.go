@@ -100,6 +100,37 @@ func NewRunner(cfg Config, asr Transcriber, now func() time.Time) *Runner {
 	}
 }
 
+// Flush finishes whatever utterance is still in progress and returns it as
+// a Final event, or no events if there was nothing to say. Call it when
+// the audio source is going away for good.
+//
+// Without this, ending a session loses the last thing said: Feed only
+// finalizes an utterance after SilenceHangoverChunks of silence, so
+// stopping within that window (about 800ms by default, and pressing a key
+// straight after you finish speaking is exactly when it happens) leaves
+// the whole utterance sitting unfinalized in the buffer, where it was
+// silently discarded.
+//
+// Like a Final from Feed, it is never gated by MinSamplesForPartial: the
+// caller has decided the audio is over, so a short utterance is still
+// reported. The runner is reset, so it may be reused afterwards.
+func (r *Runner) Flush() ([]Event, error) {
+	if len(r.segment) == 0 {
+		return nil, nil
+	}
+	text, err := r.asr.Transcribe(r.segment)
+	if err != nil {
+		return nil, err
+	}
+	r.segment = nil
+	r.lastPartial = ""
+	r.lastDecodeAt = time.Time{}
+	if text == "" {
+		return nil, nil
+	}
+	return []Event{{Kind: Final, Text: text}}, nil
+}
+
 // Feed processes one chunk of audio (float32, normalized to [-1, 1]) with
 // its measured level (dBFS): if VAD considers it part of the current
 // utterance, it's appended to the accumulating segment (genuine

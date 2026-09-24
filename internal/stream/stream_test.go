@@ -289,3 +289,108 @@ func TestRunner_FinalNotGatedByMinSamplesForPartial(t *testing.T) {
 		t.Fatalf("events = %+v, want one Final 'no' despite never reaching MinSamplesForPartial", events)
 	}
 }
+
+// The bug that lost dictation: a session ended right after speaking, inside
+// the silence hangover, so the utterance was never finalized and the
+// runner's buffer -- the only copy of what was said -- was thrown away.
+func TestRunner_FlushFinalizesAnUnfinishedUtterance(t *testing.T) {
+	asr := &fakeTranscriber{result: "the quick brown fox"}
+	r := NewRunner(noMinLength(), asr, nil)
+
+	loud := make([]float32, 1600)
+	// Speech, then stop *before* the hangover elapses: no Final from Feed.
+	for i := 0; i < 5; i++ {
+		if _, err := r.Feed(loud, -20); err != nil {
+			t.Fatalf("Feed: %v", err)
+		}
+	}
+	// A couple of silent chunks, well short of SilenceHangoverChunks.
+	for i := 0; i < 2; i++ {
+		events, err := r.Feed(loud, -80)
+		if err != nil {
+			t.Fatalf("Feed: %v", err)
+		}
+		for _, ev := range events {
+			if ev.Kind == Final {
+				t.Fatal("test setup wrong: Final arrived before Flush")
+			}
+		}
+	}
+
+	events, err := r.Flush()
+	if err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+	if len(events) != 1 || events[0].Kind != Final || events[0].Text != "the quick brown fox" {
+		t.Fatalf("Flush() = %+v, want one Final with the utterance", events)
+	}
+	if r.SegmentSamples() != 0 {
+		t.Errorf("segment still holds %d samples after Flush", r.SegmentSamples())
+	}
+}
+
+func TestRunner_FlushWithNothingBufferedDoesNothing(t *testing.T) {
+	asr := &fakeTranscriber{result: "should not be called"}
+	r := NewRunner(noMinLength(), asr, nil)
+
+	events, err := r.Flush()
+	if err != nil || len(events) != 0 {
+		t.Fatalf("Flush() = %+v, %v; want nothing", events, err)
+	}
+	if asr.calls != 0 {
+		t.Errorf("Transcribe called %d times on an empty buffer", asr.calls)
+	}
+}
+
+// A short utterance is still an utterance: the caller decided the audio is
+// over, so the MinSamplesForPartial gate (which exists to stop the model
+// hallucinating on tiny fragments *while listening*) must not apply.
+func TestRunner_FlushIsNotGatedByMinSamplesForPartial(t *testing.T) {
+	asr := &fakeTranscriber{result: "yes"}
+	r := NewRunner(DefaultConfig(), asr, nil) // gate enabled
+
+	if _, err := r.Feed(make([]float32, 800), -20); err != nil { // 50ms, far below the gate
+		t.Fatalf("Feed: %v", err)
+	}
+	events, err := r.Flush()
+	if err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+	if len(events) != 1 || events[0].Text != "yes" {
+		t.Fatalf("Flush() = %+v, want the short utterance", events)
+	}
+}
+
+func TestRunner_FlushEmptyTextIsSuppressed(t *testing.T) {
+	r := NewRunner(noMinLength(), &fakeTranscriber{result: ""}, nil)
+	if _, err := r.Feed(make([]float32, 1600), -20); err != nil {
+		t.Fatalf("Feed: %v", err)
+	}
+	events, err := r.Flush()
+	if err != nil || len(events) != 0 {
+		t.Fatalf("Flush() = %+v, %v; want no events for empty text", events, err)
+	}
+}
+
+func TestRunner_FlushErrorPropagatesAndKeepsTheAudio(t *testing.T) {
+	asr := &fakeTranscriber{result: "x"}
+	r := NewRunner(noMinLength(), asr, nil)
+	if _, err := r.Feed(make([]float32, 1600), -20); err != nil {
+		t.Fatalf("Feed: %v", err)
+	}
+
+	asr.err = errors.New("boom")
+	if _, err := r.Flush(); err == nil {
+		t.Fatal("expected the transcribe error")
+	}
+	// The audio must still be there, so a retry can succeed rather than the
+	// failure quietly destroying the only copy.
+	if r.SegmentSamples() == 0 {
+		t.Error("a failed Flush discarded the buffered audio")
+	}
+	asr.err = nil
+	events, err := r.Flush()
+	if err != nil || len(events) != 1 {
+		t.Fatalf("retry Flush() = %+v, %v; want the utterance", events, err)
+	}
+}

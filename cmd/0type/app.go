@@ -26,6 +26,11 @@ import (
 // lingering.
 const copiedConfirmationHold = 850 * time.Millisecond
 
+// flushTimeout bounds how long ending a session waits for the last words
+// to be decoded. A normal flush takes a fraction of a second; this is the
+// backstop for a stuck decode, after which the last partial is copied.
+const flushTimeout = 6 * time.Second
+
 // runApp is 0type's normal, no-subcommand entry point: it loads the model
 // once, shows the floating overlay (initially hidden), and toggles
 // visibility -- starting/stopping live mic capture and transcription along
@@ -210,17 +215,12 @@ type app struct {
 	menu      menuState
 	themeName string
 
-	mu       sync.Mutex
-	visible  bool
-	stop     chan struct{}
-	dictated string // finalized sentences this session, space-joined
-	// generation increments every time a new session starts (showAndListen).
-	// hideAndStop's delayed "hide after the confirmation hold" callback
-	// captures the generation it was scheduled under and checks it's still
-	// current before actually hiding -- otherwise a quick toggle-off then
-	// toggle-back-on within the hold window would have that stale delayed
-	// hide fire later and close the *new* session's window out from under it.
-	generation int
+	mu      sync.Mutex
+	visible bool
+	// cur is the current session, kept after it has been stopped so that
+	// its delayed finish can tell whether a newer one has replaced it (and
+	// so must leave the window alone). Nil until the first dictation.
+	cur *session
 }
 
 func (a *app) handleToggle() {
@@ -245,22 +245,20 @@ func (a *app) handleToggle() {
 }
 
 func (a *app) showAndListen() {
+	sess := newSession()
 	a.mu.Lock()
 	if a.visible {
 		a.mu.Unlock()
 		return
 	}
 	a.visible = true
-	a.dictated = ""
-	a.generation++
-	stop := make(chan struct{})
-	a.stop = stop
+	a.cur = sess
 	a.mu.Unlock()
 
 	a.win.SetText("") // back to idle for the new session
 	a.win.Show()
 	a.hooks.Fire(plugin.HookStart, "")
-	go a.runPipeline(stop)
+	go a.runPipeline(sess)
 }
 
 // hideAndStop ends the session: stops capture immediately, then copies
@@ -276,41 +274,78 @@ func (a *app) hideAndStop() {
 		return
 	}
 	a.visible = false
-	stop := a.stop
-	a.stop = nil
-	dictated := a.dictated
-	gen := a.generation
+	sess := a.cur
 	a.mu.Unlock()
 
-	if stop != nil {
-		close(stop)
-	}
-
-	if dictated == "" {
-		a.hooks.Fire(plugin.HookStop, "")
+	if sess == nil {
 		a.win.Hide()
 		return
 	}
+	sess.end()
+	a.win.SetLevel(0) // the meter shouldn't keep dancing while we finish up
 
-	ui.SetClipboard(dictated) // hideAndStop already runs on the GTK main thread (see handleToggle)
-	// on_copy is the hook that can do something *else* with the result --
-	// type it into the focused window, append it to a file -- so it fires
-	// with the same text that just went to the clipboard, before on_stop
-	// reports the session as over.
-	a.hooks.Fire(plugin.HookCopy, dictated)
-	a.hooks.Fire(plugin.HookStop, dictated)
+	// Don't read the text yet. The last thing said is usually still in the
+	// runner's buffer, not finalized -- that only happens after ~800ms of
+	// silence, and pressing the key right after you stop talking is well
+	// inside that -- so the capture goroutine is about to decode it. Wait
+	// for it, off the UI thread so the window stays responsive, but not
+	// forever: if the decode hangs we still copy what we have.
+	go func() {
+		select {
+		case <-sess.done:
+		case <-time.After(flushTimeout):
+			log.Printf("0type: finishing the last words took over %s; copying what was transcribed so far", flushTimeout)
+		}
+		ui.RunOnMainThread(func() { a.finishSession(sess) })
+	}()
+}
+
+// finishSession puts a stopped session's text on the clipboard and plays
+// the outro. It runs on the GTK main thread.
+//
+// The text is copied unconditionally, even if something else has taken the
+// window in the meantime, because the clipboard is the deliverable: a user
+// who stops dictating and immediately opens the menu, or starts again,
+// must not lose what they just said. What's conditional is only the visual
+// hand-off, which must not draw over whatever now owns the window.
+func (a *app) finishSession(sess *session) {
+	text := sess.result()
+
+	if text != "" {
+		ui.SetClipboard(text)
+		// on_copy is the hook that can do something *else* with the result --
+		// type it into the focused window, append it to a file -- so it fires
+		// with the same text that just went to the clipboard, before on_stop
+		// reports the session as over.
+		a.hooks.Fire(plugin.HookCopy, text)
+	}
+	a.hooks.Fire(plugin.HookStop, text)
+
+	if a.windowTaken(sess) {
+		return
+	}
+	if text == "" {
+		a.win.Hide() // nothing was said: no confirmation, just close
+		return
+	}
+
 	a.win.ShowCopiedConfirmation()
 	time.AfterFunc(copiedConfirmationHold, func() {
 		ui.RunOnMainThread(func() {
-			a.mu.Lock()
-			stale := a.generation != gen
-			a.mu.Unlock()
-			if stale {
-				return // a new session started before the hold elapsed -- don't close it out
+			if a.windowTaken(sess) {
+				return // something started during the hold -- don't close it out
 			}
 			a.win.Hide()
 		})
 	})
+}
+
+// windowTaken reports whether the overlay now belongs to something other
+// than sess: a newer dictation, or the menu.
+func (a *app) windowTaken(sess *session) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.cur != sess || a.visible || a.menu.open
 }
 
 // isVisible reports whether a dictation session is on screen.
@@ -324,11 +359,10 @@ func (a *app) isVisible() bool {
 // returns, to stop any in-flight capture goroutine cleanly.
 func (a *app) stopPipeline() {
 	a.mu.Lock()
-	stop := a.stop
-	a.stop = nil
+	sess := a.cur
 	a.mu.Unlock()
-	if stop != nil {
-		close(stop)
+	if sess != nil {
+		sess.end()
 	}
 }
 
@@ -342,24 +376,26 @@ func (a *app) stopPipeline() {
 // Mic open/close both happen in this goroutine (see
 // internal/audio.StreamChunks's doc comment) to avoid a close-while-
 // reading race with a handle shared across goroutines.
-func (a *app) runPipeline(stop chan struct{}) {
+func (a *app) runPipeline(sess *session) {
+	// Closed last, after the final flush, so hideAndStop knows every word
+	// has been accounted for.
+	defer close(sess.done)
+
 	mic, err := audio.OpenCapture(sampleRate, channels)
 	if err != nil {
-		text := fmt.Sprintf("mic error: %v", err)
-		ui.RunOnMainThread(func() { a.win.SetText(text) })
+		a.show(sess, fmt.Sprintf("mic error: %v", err))
 		return
 	}
 	defer mic.Close()
 
 	runner := stream.NewRunner(stream.DefaultConfig(), a.model, nil)
 	chunkSamples := sampleRate * channels * chunkMS / 1000
-	chunks := audio.StreamChunks(mic, chunkSamples, stop)
+	chunks := audio.StreamChunks(mic, chunkSamples, sess.stop)
 
 	for c := range chunks {
 		if c.Err != nil {
-			text := fmt.Sprintf("mic error: %v", c.Err)
-			ui.RunOnMainThread(func() { a.win.SetText(text) })
-			return
+			a.show(sess, fmt.Sprintf("mic error: %v", c.Err))
+			break // still flush what was heard before the mic failed
 		}
 		db := audio.DBFS(audio.RMS(c.Samples))
 		level := (db + 60) / 50 // map -60..-10 dBFS onto 0..1 for the bar's live meter
@@ -369,27 +405,57 @@ func (a *app) runPipeline(stop chan struct{}) {
 			continue // transient decode error: keep listening, don't crash the session
 		}
 		for _, ev := range events {
-			var display string
-			if ev.Kind == stream.Final {
-				a.mu.Lock()
-				a.dictated = appendSentence(a.dictated, ev.Text)
-				display = a.dictated
-				a.mu.Unlock()
-				a.hooks.Fire(plugin.HookFinal, ev.Text)
-			} else {
-				a.mu.Lock()
-				display = appendSentence(a.dictated, ev.Text)
-				a.mu.Unlock()
-			}
-			text := display
-			ui.RunOnMainThread(func() { a.win.SetText(text) })
+			a.applyEvent(sess, ev)
 		}
 	}
+
+	// The loop ends because the session was stopped. Whatever was said in
+	// the last stretch is still buffered, undecoded as a sentence -- decode
+	// it now, as a real final rather than relying on the last partial,
+	// which lags by up to a second and so is missing the very last words.
+	events, err := runner.Flush()
+	if err != nil {
+		log.Printf("0type: could not decode the last words: %v", err)
+		return // result() falls back to the last partial
+	}
+	for _, ev := range events {
+		a.applyEvent(sess, ev)
+	}
+}
+
+// applyEvent folds one transcription event into the session and, if the
+// session still owns the window, redraws it.
+func (a *app) applyEvent(sess *session, ev stream.Event) {
+	var display string
+	if ev.Kind == stream.Final {
+		display = sess.addFinal(ev.Text)
+		a.hooks.Fire(plugin.HookFinal, ev.Text)
+	} else {
+		display = sess.setPartial(ev.Text)
+	}
+	a.show(sess, display)
+}
+
+// show draws text, but only while sess is still the current session: a
+// session that is finishing in the background must not overwrite the
+// display of one that has since started.
+func (a *app) show(sess *session, text string) {
+	ui.RunOnMainThread(func() {
+		a.mu.Lock()
+		current := a.cur == sess
+		a.mu.Unlock()
+		if current {
+			a.win.SetText(text)
+		}
+	})
 }
 
 // appendSentence joins a newly finished (or in-progress) sentence onto the
 // dictation accumulated so far, space-separated.
 func appendSentence(dictated, sentence string) string {
+	if sentence == "" {
+		return dictated
+	}
 	if dictated == "" {
 		return sentence
 	}

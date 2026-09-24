@@ -951,3 +951,53 @@ prompt-injection text to the research agent. It was ignored and only
 factual BIOS-revision details were taken from that page -- worth knowing
 that fan-wiki sources can carry that, since this is exactly the kind of
 task that fetches a lot of them.
+
+## Losing what you just said
+
+Symptom: talk, press the toggle, and the window closes with nothing on the
+clipboard. It only happened when the key was pressed soon after speaking,
+which is why it looked intermittent and seemed to start "recently" --
+it tracks how quickly someone reaches for the key, not any change in the
+code.
+
+Cause: a sentence is only *finalized* after 800ms of silence following
+speech (`SilenceHangoverChunks`), and only finalized sentences were kept.
+The live text on screen was a partial, and partials were drawn but never
+saved. Stopping inside that 800ms window -- which is exactly when you'd
+press the key -- left the whole utterance in the runner's buffer, and
+`hideAndStop` read an empty `dictated`, took its "nothing was said" branch
+and closed the window.
+
+It was reproduced before fixing: with test audio played into a null sink,
+toggling 3s after the audio copied the sentence, and toggling 0.4s after
+left the clipboard untouched.
+
+The fix has three parts, and each is load-bearing:
+
+1. **`Runner.Flush`** decodes whatever utterance is still buffered as a
+   proper final. Not gated by `MinSamplesForPartial` (that gate exists to
+   stop hallucinated filler while *listening*; when the caller has decided
+   the audio is over, even a short utterance counts), and a failed flush
+   keeps the audio so it can be retried.
+2. **Stopping waits for that decode** (off the UI thread, with a 6s
+   backstop), instead of reading the text immediately. Relying on the last
+   *partial* alone wouldn't do: it lags by up to a second, so it is
+   missing the last words.
+3. **The clipboard gets finals plus the in-progress sentence**
+   (`session.result`). Normally the flush has already folded the partial
+   in, but if the decode fails or times out a slightly stale sentence is
+   far better than none.
+
+Two things this exposed, both fixed as part of it:
+
+- **`Model.Transcribe` wasn't safe to call concurrently.** It shares ONNX
+  sessions across calls. Nothing used to overlap, but flushing a stopping
+  session while the user starts the next one does, so it now holds a lock.
+- **Dictation state moved from `app` fields into a per-session value.**
+  Ending a session is no longer instant, so it can now be *finishing* while
+  the next one starts; with shared fields the old session's late result
+  would overwrite the new one's. The text is always copied (the clipboard is
+  the deliverable), but the outro is skipped if a newer session or the menu
+  has taken the window. Checked end to end: stop-then-restart and
+  stop-then-menu both keep the text and leave the window with the newer
+  owner.
