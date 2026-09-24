@@ -71,3 +71,34 @@ func TestSessionEndIsIdempotent(t *testing.T) {
 		t.Error("stop channel not closed after end()")
 	}
 }
+
+// "Finishing" is the window in which pressing the key again means "skip the
+// wait" rather than "start a new session". It must be true from the moment
+// the session is stopped until its text has been delivered -- and false
+// before and after, or the key would stop starting sessions.
+func TestSessionFinishingWindow(t *testing.T) {
+	s := newSession()
+	if s.finishing() {
+		t.Error("a running session reports finishing")
+	}
+	s.end()
+	if !s.finishing() {
+		t.Error("a stopped session that hasn't delivered yet should report finishing")
+	}
+	s.markFinished()
+	if s.finishing() {
+		t.Error("a delivered session still reports finishing")
+	}
+}
+
+func TestSessionSkipWaitIsIdempotent(t *testing.T) {
+	s := newSession()
+	s.skipWait()
+	s.skipWait() // must not panic
+
+	select {
+	case <-s.skip:
+	default:
+		t.Error("skip channel not closed after skipWait()")
+	}
+}

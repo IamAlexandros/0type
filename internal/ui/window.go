@@ -142,6 +142,7 @@ typedef struct {
 	gboolean started;
 	gboolean confirmation; // TRUE while showing "Copied" rather than idle/transcript text
 	double level_target;   // 0..1, from the capture pipeline
+	gboolean busy;         // pulse the meter on its own: the app is finishing, not listening
 	double level_current;  // eased toward level_target each frame (slide_tick)
 
 	// Color probes: permanently invisible widgets that exist only to carry
@@ -579,6 +580,13 @@ static gboolean slide_tick(GtkWidget *widget, GdkFrameClock *clock, gpointer dat
 	} else {
 		s->current_x += diff * (1.0 - exp(-dt / 0.11)); // tau 110ms: snappy but not abrupt
 	}
+	if (s->busy) {
+		// Not listening, but not done either: a slow swell tells the person
+		// the bar is still working. Without any sign of life, a bar that
+		// has been asked to stop and hasn't yet closed looks broken -- and
+		// the natural response is to press the key again.
+		s->level_target = 0.5 + 0.3 * sin((double)now / 1000000.0 * 6.0);
+	}
 	s->level_current += (s->level_target - s->level_current) * (1.0 - exp(-dt / 0.06));
 
 	double sel_diff = s->sel_y_target - s->sel_y_current;
@@ -803,6 +811,13 @@ static void slide_set_art(SlideState *s, const char *flat, int rows, int cols) {
 static void slide_set_mark(SlideState *s, int mark) {
 	s->mark = mark;
 	gtk_widget_queue_draw(s->area);
+}
+
+static void slide_set_busy(SlideState *s, gboolean busy) {
+	s->busy = busy;
+	if (!busy) {
+		s->level_target = 0;
+	}
 }
 
 static void slide_set_level(SlideState *s, double level) {
@@ -1427,6 +1442,18 @@ func (w *Window) SetMark(m Mark) {
 		code = C.MARK_ZERO
 	}
 	C.slide_set_mark(w.slide, code)
+}
+
+// SetBusy makes the level meter pulse by itself, to show the overlay is
+// finishing something rather than listening. Turning it off returns the
+// meter to zero until SetLevel drives it again. Must be called from the GTK
+// main thread.
+func (w *Window) SetBusy(busy bool) {
+	b := C.gboolean(C.FALSE)
+	if busy {
+		b = C.TRUE
+	}
+	C.slide_set_busy(w.slide, b)
 }
 
 // SetLevel feeds the bar's live level meter (0..1, from the capture

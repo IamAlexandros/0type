@@ -53,6 +53,23 @@ type Config struct {
 	// decodes are never gated by this -- an utterance VAD has decided is
 	// over is always reported, however short.
 	MinSamplesForPartial int
+
+	// SoftSegmentSamples and HardSegmentSamples bound how long a single
+	// utterance may grow. Decoding cost is roughly linear in segment length
+	// (about 0.15x realtime on CPU), and every partial re-decodes the whole
+	// segment, so someone who talks for a minute without a pause used to
+	// make each update take seconds -- and made stopping take as long,
+	// since the last words are decoded at that point. Bounding the segment
+	// bounds all of it.
+	//
+	// Past SoftSegmentSamples the segment is finalized at the next short
+	// pause (SoftPauseChunks of silence, far shorter than the normal
+	// hangover, since a breath is enough of a boundary here). Past
+	// HardSegmentSamples it is finalized wherever it is, mid-word if need
+	// be. Zero disables either limit.
+	SoftSegmentSamples int
+	HardSegmentSamples int
+	SoftPauseChunks    int
 }
 
 // DefaultConfig returns reasonable defaults for 16kHz mic input processed
@@ -63,6 +80,9 @@ func DefaultConfig() Config {
 		SilenceThresholdDB:    -45,
 		SilenceHangoverChunks: 8,    // ~800ms at 100ms chunks
 		MinSamplesForPartial:  4800, // 300ms at 16kHz
+		SoftSegmentSamples:    10 * 16000,
+		HardSegmentSamples:    18 * 16000,
+		SoftPauseChunks:       3, // ~300ms at 100ms chunks
 	}
 }
 
@@ -78,6 +98,7 @@ type Runner struct {
 	segment      []float32
 	lastPartial  string
 	lastDecodeAt time.Time
+	pauseRun     int // consecutive silent chunks inside the current segment
 }
 
 // SegmentSamples returns the number of samples accumulated for the
@@ -98,6 +119,23 @@ func NewRunner(cfg Config, asr Transcriber, now func() time.Time) *Runner {
 		vad: NewVAD(cfg.SilenceThresholdDB, cfg.SilenceHangoverChunks),
 		now: now,
 	}
+}
+
+// segmentTooLong reports whether the current segment has hit a length
+// limit and should be finalized now rather than waiting for the VAD.
+func (r *Runner) segmentTooLong() bool {
+	n := len(r.segment)
+	if r.cfg.HardSegmentSamples > 0 && n >= r.cfg.HardSegmentSamples {
+		return true
+	}
+	if r.cfg.SoftSegmentSamples > 0 && n >= r.cfg.SoftSegmentSamples {
+		pause := r.cfg.SoftPauseChunks
+		if pause < 1 {
+			pause = 1
+		}
+		return r.pauseRun >= pause
+	}
+	return false
 }
 
 // Flush finishes whatever utterance is still in progress and returns it as
@@ -125,6 +163,7 @@ func (r *Runner) Flush() ([]Event, error) {
 	r.segment = nil
 	r.lastPartial = ""
 	r.lastDecodeAt = time.Time{}
+	r.pauseRun = 0
 	if text == "" {
 		return nil, nil
 	}
@@ -142,18 +181,34 @@ func (r *Runner) Flush() ([]Event, error) {
 func (r *Runner) Feed(chunk []float32, chunkDB float64) ([]Event, error) {
 	var events []Event
 
-	_, active, endOfUtterance := r.vad.Update(chunkDB)
+	isSpeech, active, endOfUtterance := r.vad.Update(chunkDB)
+	if isSpeech {
+		r.pauseRun = 0
+	} else if active {
+		r.pauseRun++
+	}
 	if active {
 		r.segment = append(r.segment, chunk...)
 	}
 
-	if endOfUtterance && len(r.segment) > 0 {
+	// The VAD decides an utterance is over after a long silence; the runner
+	// also ends one itself when it has grown too long (see Config).
+	tooLong := !endOfUtterance && r.segmentTooLong()
+	if (endOfUtterance || tooLong) && len(r.segment) > 0 {
 		text, err := r.asr.Transcribe(r.segment)
 		if err != nil {
 			return events, err
 		}
 		r.segment = nil
 		r.lastPartial = ""
+		r.pauseRun = 0
+		if tooLong {
+			// The VAD still thinks it is mid-utterance, so the silence
+			// that follows would keep being accumulated into a new segment
+			// that is nothing but silence -- which the model may answer with
+			// filler words. Start the next one from silence.
+			r.vad.Reset()
+		}
 		// Zero, not r.now(): the next utterance must get an immediate
 		// first partial regardless of how soon after this one it starts.
 		r.lastDecodeAt = time.Time{}

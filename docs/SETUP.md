@@ -1001,3 +1001,51 @@ Two things this exposed, both fixed as part of it:
   has taken the window. Checked end to end: stop-then-restart and
   stop-then-menu both keep the text and leave the window with the newer
   owner.
+
+## The toggle that wouldn't turn off
+
+Symptom: press the toggle to stop, the bar stays up for a few seconds, press
+it again out of impatience -- and a *new* bar opens instead of the old one
+closing. It looked like the key refused to stop dictation.
+
+This was introduced by the previous fix. Stopping now waits for the last
+words to be decoded (see "Losing what you just said"), and the daemon's own
+log had the evidence: `finishing the last words took over 6s`. That test
+used a 3-second clip; real dictation is longer.
+
+Decode time is roughly linear in the length of the utterance, about 0.1-0.2x
+realtime on this CPU (`go test -tags integration -run Scaling -v
+./internal/asr`):
+
+    3.4s of audio  ->  0.50s
+    13.8s          ->  2.30s
+    30.9s          ->  3.79s
+    48.1s          ->  6.88s
+
+Nothing bounded the length of an utterance: a segment only ended after
+800ms of silence, so someone talking for a minute without a pause made one
+segment that long. That hurt twice -- every partial update re-decoded the
+whole thing (so the bar lagged further behind the longer you spoke), and
+stopping had to decode all of it once more, behind whichever partial was
+already running.
+
+Three changes, all needed:
+
+1. **Bound the segment** (`SoftSegmentSamples` 10s, `HardSegmentSamples`
+   18s, `SoftPauseChunks` 3). Past 10s the segment ends at the next 300ms
+   pause -- a breath is enough of a boundary once it's this long -- and past
+   18s it ends wherever it is. After a forced end the VAD is reset, so the
+   silence that follows isn't accumulated into a segment of pure silence,
+   which the model answers with filler words. Measured: 27s of unbroken
+   speech now reaches the clipboard 0.6s after stopping, all words intact.
+   The cost is real and visible in that test: with no pause to cut at, the
+   hard limit can split a word ("jumps over" -> "jump, sover"). Real speech
+   has pauses, so the soft limit normally applies instead.
+2. **Show that it's working.** While finishing, the level meter pulses on
+   its own. A bar that has been asked to stop and shows no sign of life
+   looks broken, and pressing the key again is the natural response.
+3. **A press while finishing means "I already asked you to stop"**, not
+   "start over": it delivers what's already been transcribed right away.
+   Pressing after the bar has closed still starts a new session. Skipping
+   gives up the last decode by design (76 of 81 words in the test, against
+   81 when waiting).

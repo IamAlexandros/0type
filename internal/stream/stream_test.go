@@ -394,3 +394,140 @@ func TestRunner_FlushErrorPropagatesAndKeepsTheAudio(t *testing.T) {
 		t.Fatalf("retry Flush() = %+v, %v; want the utterance", events, err)
 	}
 }
+
+// limitCfg is a small-number config for the segment-length limits: 100
+// sample chunks, soft limit 1000 samples (10 chunks), hard limit 3000
+// (30 chunks), a 2-chunk pause, and a hangover far longer than any of the
+// tests' silences so only the length limits can end an utterance.
+func limitCfg() Config {
+	cfg := noMinLength()
+	cfg.SilenceHangoverChunks = 1000
+	cfg.SoftSegmentSamples = 1000
+	cfg.HardSegmentSamples = 3000
+	cfg.SoftPauseChunks = 2
+	return cfg
+}
+
+func feedN(t *testing.T, r *Runner, n int, db float64) []Event {
+	t.Helper()
+	chunk := make([]float32, 100)
+	var all []Event
+	for i := 0; i < n; i++ {
+		ev, err := r.Feed(chunk, db)
+		if err != nil {
+			t.Fatalf("Feed: %v", err)
+		}
+		all = append(all, ev...)
+	}
+	return all
+}
+
+func finals(events []Event) int {
+	n := 0
+	for _, e := range events {
+		if e.Kind == Final {
+			n++
+		}
+	}
+	return n
+}
+
+// Past the soft limit a short pause is enough to end the segment, so a long
+// dictation is cut where the speaker breathes rather than mid-word.
+func TestRunner_SoftLimitFinalizesAtTheNextShortPause(t *testing.T) {
+	r := NewRunner(limitCfg(), &fakeTranscriber{result: "part one"}, nil)
+
+	// Speech right up to the soft limit: no pause yet, so no Final.
+	if got := finals(feedN(t, r, 12, -20)); got != 0 {
+		t.Fatalf("got %d finals with no pause, want 0", got)
+	}
+	// One silent chunk is not yet a pause...
+	if got := finals(feedN(t, r, 1, -80)); got != 0 {
+		t.Fatalf("finalized after a single silent chunk")
+	}
+	// ...the second is.
+	if got := finals(feedN(t, r, 1, -80)); got != 1 {
+		t.Fatalf("got %d finals at the pause, want 1", got)
+	}
+	if r.SegmentSamples() != 0 {
+		t.Errorf("segment not reset after the forced final: %d samples", r.SegmentSamples())
+	}
+}
+
+// Below the soft limit a short pause must not cut anything: that's normal
+// speech rhythm, and the ordinary hangover handles real sentence ends.
+func TestRunner_ShortPauseBelowTheSoftLimitDoesNotFinalize(t *testing.T) {
+	r := NewRunner(limitCfg(), &fakeTranscriber{result: "x"}, nil)
+
+	feedN(t, r, 4, -20)
+	if got := finals(feedN(t, r, 3, -80)); got != 0 {
+		t.Fatalf("a short pause in a short segment produced %d finals", got)
+	}
+}
+
+// Someone who never pauses still gets a bounded segment.
+func TestRunner_HardLimitFinalizesMidSpeech(t *testing.T) {
+	r := NewRunner(limitCfg(), &fakeTranscriber{result: "long"}, nil)
+
+	got := finals(feedN(t, r, 45, -20)) // 4500 samples of continuous speech
+	if got != 1 {
+		t.Fatalf("got %d finals over 4500 samples of unbroken speech, want 1", got)
+	}
+	if r.SegmentSamples() >= limitCfg().HardSegmentSamples {
+		t.Errorf("segment is still %d samples, above the hard limit", r.SegmentSamples())
+	}
+}
+
+// After a forced final the silence that follows must not become a segment
+// of its own: the model answers silence with filler words.
+func TestRunner_NothingIsAccumulatedInTheSilenceAfterAForcedFinal(t *testing.T) {
+	r := NewRunner(limitCfg(), &fakeTranscriber{result: "part"}, nil)
+
+	feedN(t, r, 12, -20)
+	feedN(t, r, 2, -80) // pause -> forced final
+	feedN(t, r, 6, -80) // ...then a long silence
+
+	if r.SegmentSamples() != 0 {
+		t.Errorf("silence after a forced final accumulated %d samples", r.SegmentSamples())
+	}
+	// Speech resuming must start a fresh segment normally.
+	feedN(t, r, 3, -20)
+	if r.SegmentSamples() != 300 {
+		t.Errorf("segment after resuming = %d samples, want 300", r.SegmentSamples())
+	}
+}
+
+// A failed decode at a forced boundary must not lose the audio; the next
+// chunk retries.
+func TestRunner_ForcedFinalErrorKeepsTheAudio(t *testing.T) {
+	asr := &fakeTranscriber{result: "ok"}
+	r := NewRunner(limitCfg(), asr, nil)
+	feedN(t, r, 12, -20)
+
+	asr.err = errors.New("boom")
+	if _, err := r.Feed(make([]float32, 100), -80); err != nil {
+		t.Fatalf("Feed at the not-yet-a-pause chunk: %v", err)
+	}
+	if _, err := r.Feed(make([]float32, 100), -80); err == nil {
+		t.Fatal("expected the transcribe error at the forced boundary")
+	}
+	if r.SegmentSamples() == 0 {
+		t.Fatal("audio discarded by a failed forced final")
+	}
+	asr.err = nil
+	if got := finals(feedN(t, r, 1, -80)); got != 1 {
+		t.Errorf("retry produced %d finals, want 1", got)
+	}
+}
+
+// The defaults themselves have to be coherent, or the limits do nothing.
+func TestDefaultConfigSegmentLimitsAreCoherent(t *testing.T) {
+	c := DefaultConfig()
+	if c.SoftSegmentSamples <= 0 || c.HardSegmentSamples <= c.SoftSegmentSamples {
+		t.Errorf("soft=%d hard=%d: want 0 < soft < hard", c.SoftSegmentSamples, c.HardSegmentSamples)
+	}
+	if c.SoftPauseChunks < 1 || c.SoftPauseChunks >= c.SilenceHangoverChunks {
+		t.Errorf("SoftPauseChunks=%d must be in [1, hangover=%d): a soft pause should be shorter than a real end of utterance",
+			c.SoftPauseChunks, c.SilenceHangoverChunks)
+	}
+}

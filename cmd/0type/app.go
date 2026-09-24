@@ -235,7 +235,17 @@ func (a *app) handleToggle() {
 		}
 		a.mu.Lock()
 		show := !a.visible
+		cur := a.cur
 		a.mu.Unlock()
+		// The bar has been told to stop and is still decoding the last
+		// words. Pressing again here means "I already asked you to stop",
+		// not "start over": deliver what we have now rather than open a new
+		// session on top of the one that's closing -- which is what it used
+		// to do, and it looked like the toggle refused to turn off.
+		if show && cur != nil && cur.finishing() {
+			cur.skipWait()
+			return
+		}
 		if show {
 			a.showAndListen()
 		} else {
@@ -255,6 +265,7 @@ func (a *app) showAndListen() {
 	a.cur = sess
 	a.mu.Unlock()
 
+	a.win.SetBusy(false)
 	a.win.SetText("") // back to idle for the new session
 	a.win.Show()
 	a.hooks.Fire(plugin.HookStart, "")
@@ -282,8 +293,7 @@ func (a *app) hideAndStop() {
 		return
 	}
 	sess.end()
-	a.win.SetLevel(0) // the meter shouldn't keep dancing while we finish up
-
+	a.win.SetBusy(true) // the meter stops following the mic and pulses: still working
 	// Don't read the text yet. The last thing said is usually still in the
 	// runner's buffer, not finalized -- that only happens after ~800ms of
 	// silence, and pressing the key right after you stop talking is well
@@ -293,6 +303,7 @@ func (a *app) hideAndStop() {
 	go func() {
 		select {
 		case <-sess.done:
+		case <-sess.skip: // pressed again: don't wait for the last decode
 		case <-time.After(flushTimeout):
 			log.Printf("0type: finishing the last words took over %s; copying what was transcribed so far", flushTimeout)
 		}
@@ -309,6 +320,8 @@ func (a *app) hideAndStop() {
 // must not lose what they just said. What's conditional is only the visual
 // hand-off, which must not draw over whatever now owns the window.
 func (a *app) finishSession(sess *session) {
+	sess.markFinished()
+	a.win.SetBusy(false)
 	text := sess.result()
 
 	if text != "" {

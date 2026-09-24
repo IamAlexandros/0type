@@ -20,6 +20,14 @@ func NewVAD(thresholdDB float64, hangoverChunks int) *VAD {
 	return &VAD{thresholdDB: thresholdDB, hangoverChunks: hangoverChunks}
 }
 
+// Reset forgets any speech in progress, so the next chunk starts from
+// silence. Used when the runner finalizes an utterance itself (because it
+// grew too long) rather than because the VAD saw it end.
+func (v *VAD) Reset() {
+	v.speaking = false
+	v.silenceRun = 0
+}
+
 // Update processes one chunk's level (in dBFS) and returns:
 //   - isSpeech: whether this chunk itself is above the silence threshold.
 //   - active: whether this chunk belongs to the current utterance --
